@@ -895,6 +895,7 @@ tr:hover td{background:#fafaf8}
       <select id="acc-stmt-client" onchange="renderStatement()" style="height:38px;min-width:200px">
         <option value="">اختر عميل...</option>
       </select>
+      <select id="acc-stmt-mode" onchange="renderStatement()" style="height:38px"><option value="detail">📋 كشف تفصيلي</option><option value="sum">📊 كشف إجمالي</option></select>
       <select id="acc-stmt-year" onchange="renderStatement()" style="height:38px">
         <option value="">كل السنين</option>
       </select>
@@ -935,6 +936,7 @@ tr:hover td{background:#fafaf8}
       <select id="sup-stmt-supplier" onchange="renderSupplierStatement()" style="height:38px;min-width:200px">
         <option value="">اختر مورد...</option>
       </select>
+      <select id="sup-stmt-mode" onchange="renderSupplierStatement()" style="height:38px"><option value="detail">📋 كشف تفصيلي</option><option value="sum">📊 كشف إجمالي</option></select>
       <select id="sup-stmt-year" onchange="renderSupplierStatement()" style="height:38px">
         <option value="">كل السنين</option>
       </select>
@@ -9567,6 +9569,94 @@ function pkRunApplyStock(runId,date,sd){
   sd.lines.forEach(l=>V24D.pkStock.push({id:pkNextId(V24D.pkStock),date,itemId:l.itemId,type:'out',qty:l.qty,reason:'استهلاك إنتاج',ref,runId,createdBy:v24Who()}));
   if(sd.fit){ const st=pkAllStats(); let cost=0; sd.lines.forEach(l=>{ const s=st[l.itemId]; cost+=l.qty*(s?s.avg:0); }); V24D.pkStock.push({id:pkNextId(V24D.pkStock),date,itemId:sd.fit.id,type:'in',qty:sd.fqty,unitCost:sd.fqty>0&&cost>0?Math.round(cost/sd.fqty*100)/100:undefined,reason:'إنتاج (إضافة منتج تام)',ref,runId,createdBy:v24Who()}); }
   DB.save('pkStock',V24D.pkStock);
+}
+
+/* ===== كشف الحساب: تفصيلي / إجمالي (عملاء + موردين) ===== */
+function v24StmtMode(id){ const e=document.getElementById(id); return (e&&e.value)||'detail'; }
+function v24StmtBuild(c){
+  // c: {who, all, year, mode, area, title, dLbl, cLbl, posLbl, negLbl, posShort, negShort, kinds}
+  const r0=x=>Math.round(x||0);
+  const all=c.all;                       // كل الحركات (بدون فلتر سنة) بترتيب زمني ورصيد تراكمي
+  const inYear=e=>!c.year||(e.date||'').startsWith(c.year);
+  const rows=all.filter(inYear);
+  const before=c.year?all.filter(e=>(e.date||'').slice(0,4)<c.year):[];
+  const opening=before.length?before[before.length-1].running:0;
+  const totD=rows.reduce((s,e)=>s+(e.debit||0),0), totC=rows.reduce((s,e)=>s+(e.credit||0),0);
+  const closing=opening+totD-totC;
+  const col=b=>b>0?'var(--c-danger)':b<0?'var(--c-success)':'var(--c-muted)';
+  const lbl=b=>b>0?c.posLbl:b<0?c.negLbl:'(الحساب متسوي ✅)';
+  const sh=b=>b>0?c.posShort:b<0?c.negShort:'✅';
+  const balCell=b=>`<span style="color:${col(b)};font-weight:700">${fmt(Math.abs(r0(b)))} ${sh(b)}</span>`;
+  const modeName=c.mode==='sum'?'كشف إجمالي':'كشف تفصيلي';
+  const head=`
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--c-primary)">
+        <div>
+          <div style="font-size:18px;font-weight:700;color:var(--c-primary)">${c.title} — ${c.who}</div>
+          <div style="font-size:12px;color:var(--c-muted);margin-top:4px">${modeName} | ${c.year?`سنة ${c.year}`:'كل الفترات'} | تاريخ الطباعة: ${today()}</div>
+        </div>
+        <div style="text-align:left">
+          <div style="font-size:11px;color:var(--c-muted)">الرصيد في نهاية الفترة</div>
+          <div style="font-size:22px;font-weight:700;color:${col(closing)}">${fmt(Math.abs(r0(closing)))} ج.م</div>
+          <div style="font-size:11px;color:${col(closing)}">${lbl(closing)}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        ${c.year?`<div class="metric" style="flex:1;min-width:130px"><div class="label">رصيد مرحّل أول الفترة</div><div class="value" style="color:${col(opening)}">${fmt(Math.abs(r0(opening)))}</div><div class="sub">ج.م ${sh(opening)==='✅'?'':sh(opening)}</div></div>`:''}
+        <div class="metric" style="flex:1;min-width:130px"><div class="label">${c.dLbl}</div><div class="value" style="color:var(--c-danger)">${fmt(r0(totD))}</div><div class="sub">ج.م</div></div>
+        <div class="metric" style="flex:1;min-width:130px"><div class="label">${c.cLbl}</div><div class="value" style="color:var(--c-success)">${fmt(r0(totC))}</div><div class="sub">ج.م</div></div>
+        <div class="metric" style="flex:1;min-width:130px"><div class="label">الرصيد المستحق</div><div class="value" style="color:${col(closing)}">${fmt(Math.abs(r0(closing)))}</div><div class="sub">ج.م ${lbl(closing)}</div></div>
+      </div>`;
+  if(!rows.length&&!opening) return head+'<p style="color:var(--c-muted);text-align:center;padding:30px">لا توجد معاملات في الفترة المحددة</p>';
+  let table='';
+  if(c.mode==='sum'){
+    const months={};
+    rows.forEach(e=>{const m=(e.date||'').slice(0,7)||'—'; (months[m]=months[m]||{n:0,d:0,cc:0,last:0}); const o=months[m];
+      if(e.debit){o.n++;o.d+=e.debit} if(e.credit)o.cc+=e.credit; o.last=e.running;});
+    const keys=Object.keys(months).sort();
+    table=`<table>
+      <thead><tr><th>الشهر</th><th>عدد الفواتير</th><th>${c.dLbl}</th><th>${c.cLbl}</th><th>صافي الحركة</th><th>الرصيد نهاية الشهر</th></tr></thead>
+      <tbody>
+        ${c.year?`<tr style="background:var(--c-bg)"><td colspan="5" style="font-weight:700">رصيد مرحّل أول الفترة</td><td>${balCell(opening)}</td></tr>`:''}
+        ${keys.map(k=>{const o=months[k];const net=o.d-o.cc;return `<tr><td>${k}</td><td>${o.n}</td><td style="color:var(--c-danger)">${o.d?fmt(r0(o.d)):'—'}</td><td style="color:var(--c-success)">${o.cc?fmt(r0(o.cc)):'—'}</td><td>${fmt(Math.abs(r0(net)))} ${net>0?c.posShort:net<0?c.negShort:''}</td><td>${balCell(o.last)}</td></tr>`}).join('')}
+      </tbody>
+      <tfoot><tr style="font-weight:700;background:var(--c-bg)"><td>الإجمالي</td><td>${rows.filter(e=>e.debit).length}</td><td style="color:var(--c-danger)">${fmt(r0(totD))}</td><td style="color:var(--c-success)">${fmt(r0(totC))}</td><td>${fmt(Math.abs(r0(totD-totC)))} ${totD>totC?c.posShort:totD<totC?c.negShort:''}</td><td>${balCell(closing)}</td></tr></tfoot>
+    </table>`;
+  } else {
+    table=`<table>
+      <thead><tr><th>التاريخ</th><th>النوع</th><th>المرجع</th><th>البيان / الصنف</th><th>الكمية</th><th>السعر</th><th>${c.dLbl.split(' ')[0]==='إجمالي'?'مدين':'مدين'}</th><th>دائن</th><th>الرصيد</th><th class="no-print"></th></tr></thead>
+      <tbody>
+        ${c.year?`<tr style="background:var(--c-bg)"><td colspan="8" style="font-weight:700">رصيد مرحّل أول الفترة</td><td>${balCell(opening)}</td><td class="no-print"></td></tr>`:''}
+        ${rows.map(e=>{const raw=e.raw||{};const isInv=!!e.debit&&!e.credit;
+          const q=isInv&&raw.qty?(fmt(raw.qty)+(raw.unit?' '+raw.unit:'')):'—';
+          const p=isInv&&raw.unitPrice?fmt(Math.round(raw.unitPrice*100)/100):'—';
+          const run=c.year?e.running:e.running;
+          return `<tr style="${isInv?'':'background:#f0fdf4'}"><td>${e.date}</td><td>${e.type}</td><td style="font-size:11px">${e.ref}</td><td style="font-size:12px">${e.desc}${isInv&&raw.notes?`<div style="font-size:10px;color:var(--c-muted)">${raw.notes}</div>`:''}</td><td>${q}</td><td>${p}</td>
+          <td style="color:var(--c-danger);font-weight:${e.debit?700:400}">${e.debit?fmt(r0(e.debit)):'—'}</td>
+          <td style="color:var(--c-success);font-weight:${e.credit?700:400}">${e.credit?fmt(r0(e.credit)):'—'}</td>
+          <td>${balCell(run)}</td><td class="no-print">${c.delBtn?c.delBtn(e):''}</td></tr>`}).join('')}
+      </tbody>
+      <tfoot><tr style="font-weight:700;background:var(--c-bg)"><td colspan="6" style="text-align:center">الإجمالي</td><td style="color:var(--c-danger)">${fmt(r0(totD))}</td><td style="color:var(--c-success)">${fmt(r0(totC))}</td><td>${balCell(closing)}</td><td class="no-print"></td></tr></tfoot>
+    </table>`;
+  }
+  return head+table;
+}
+function renderStatement(){
+  const client=document.getElementById('acc-stmt-client').value;
+  const year=document.getElementById('acc-stmt-year').value;
+  const body=document.getElementById('acc-stmt-body');
+  if(!client){body.innerHTML='<p style="color:var(--c-muted);text-align:center;padding:40px">اختر عميل من القائمة</p>';return;}
+  body.innerHTML='<div id="stmt-print-area">'+v24StmtBuild({who:client,all:getClientLedger(client,''),year,mode:v24StmtMode('acc-stmt-mode'),title:'كشف حساب',
+    dLbl:'إجمالي الفواتير',cLbl:'إجمالي الدفعات',posLbl:'(مدين — مستحق على العميل)',negLbl:'(دائن — مستحق للعميل)',posShort:'م',negShort:'د',
+    delBtn:e=>e.type==='دفعة'?`<button class="btn" style="padding:2px 7px;font-size:10px;color:var(--c-danger)" onclick="deletePayment(${e.raw.id})">🗑</button>`:''})+'</div>';
+}
+function renderSupplierStatement(){
+  const supplier=document.getElementById('sup-stmt-supplier').value;
+  const year=document.getElementById('sup-stmt-year').value;
+  const body=document.getElementById('sup-stmt-body');
+  if(!supplier){body.innerHTML='<p style="color:var(--c-muted);text-align:center;padding:40px">اختر مورد من القائمة</p>';return;}
+  body.innerHTML='<div id="sup-stmt-print-area">'+v24StmtBuild({who:supplier,all:getSupplierLedger(supplier,''),year,mode:v24StmtMode('sup-stmt-mode'),title:'كشف حساب مورد',
+    dLbl:'إجمالي المشتريات',cLbl:'المدفوع والمرتجعات',posLbl:'(مستحق للمورد)',negLbl:'(رصيد لنا عنده)',posShort:'م',negShort:'د',
+    delBtn:e=>e.type==='سند دفع'?`<button class="btn" style="padding:2px 7px;font-size:10px;color:var(--c-danger)" onclick="deleteSupplierPayment(${e.raw.id})">🗑</button>`:e.type==='مرتجع مشتريات'?`<button class="btn" style="padding:2px 7px;font-size:10px;color:var(--c-danger)" onclick="deletePurchaseReturn(${e.raw.id})">🗑</button>`:''})+'</div>';
 }
 
 // ================= v24.3 — استيراد حزم البيانات (للمدير فقط) =================
