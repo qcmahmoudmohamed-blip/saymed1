@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 26-10 • فيه تسعير الكوفير</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -8260,13 +8260,13 @@ function v24RenderAuditRows(){
 }
 function v24RestoreDeleted(i){
   const e=(window.v24AuditView||[])[i]; if(!e||!e.before) return;
-  const map={payments:()=>payments,supplierPayments:()=>supplierPayments,treasury:()=>treasury,sales:()=>sales,purchases:()=>purchases,purchaseReturns:()=>purchaseReturns,handlingExpenses:()=>handlingExpenses,workOrders:()=>workOrders,parts:()=>parts,production:()=>production,equipment:()=>equipment,technicians:()=>technicians,custody:()=>V24D.custody,obligations:()=>V24D.obligations,pkRuns:()=>V24D.pkRuns,pkLedger:()=>V24D.pkLedger,pkAcct:()=>V24D.pkAcct,pkItems:()=>V24D.pkItems,pkStock:()=>V24D.pkStock,pkPurch:()=>V24D.pkPurch};
+  const map={payments:()=>payments,supplierPayments:()=>supplierPayments,treasury:()=>treasury,sales:()=>sales,purchases:()=>purchases,purchaseReturns:()=>purchaseReturns,handlingExpenses:()=>handlingExpenses,workOrders:()=>workOrders,parts:()=>parts,production:()=>production,equipment:()=>equipment,technicians:()=>technicians,custody:()=>V24D.custody,obligations:()=>V24D.obligations,pkRuns:()=>V24D.pkRuns,pkLedger:()=>V24D.pkLedger,pkAcct:()=>V24D.pkAcct,pkItems:()=>V24D.pkItems,pkStock:()=>V24D.pkStock,pkPurch:()=>V24D.pkPurch,pkPricing:()=>V24D.pkPricing};
   const getter=map[e.key]; if(!getter){alert('النوع ده لا يمكن استرجاعه تلقائيًا');return;}
   const arr=getter();
   if(arr.some(r=>String(r.id)===String(e.before.id))){alert('السجل ده موجود بالفعل');return;}
   if(!confirm('استرجاع: '+e.label+' ؟')) return;
   arr.push(e.before);
-  if(['custody','obligations','stocktakes','pkRuns','pkLedger','pkAcct','pkItems','pkStock','pkPurch'].includes(e.key)) DB.save(e.key,arr); else saveAll();
+  if(['custody','obligations','stocktakes','pkRuns','pkLedger','pkAcct','pkItems','pkStock','pkPurch','pkPricing'].includes(e.key)) DB.save(e.key,arr); else saveAll();
   v24Audit([{ts:new Date().toISOString(),user:v24Who(),key:e.key,action:'restore',recId:e.before.id,label:'استرجاع: '+e.label}]);
   alert('تم الاسترجاع'); renderAuditPage();
 }
@@ -8280,10 +8280,10 @@ function v24AuditView_all(){ return v24AuditCache||[]; }
 // ================= v24.1 — صلاحيات على مستوى الصفحة + قوالب الأدوار =================
 // (التعريفات التالية تحل محل نظيراتها الأقدم أعلاه)
 if(!APP_GROUPS.some(g=>g.id==='packaging')) APP_GROUPS.push({id:'packaging',label:'📦 التعبئة والتغليف (فلوباك 350)'});
-Object.assign(V24_EXTRA_KEYS,{pkRuns:'pkRuns',pkLedger:'pkLedger',pkAcct:'pkAcct',pkItems:'pkItems',pkStock:'pkStock',pkPurch:'pkPurch'});
-V24D.pkRuns=DB.load('pkRuns',[]); V24D.pkLedger=DB.load('pkLedger',[]); V24D.pkAcct=DB.load('pkAcct',[]); V24D.pkItems=DB.load('pkItems',[]); V24D.pkStock=DB.load('pkStock',[]); V24D.pkPurch=DB.load('pkPurch',[]);
+Object.assign(V24_EXTRA_KEYS,{pkRuns:'pkRuns',pkLedger:'pkLedger',pkAcct:'pkAcct',pkItems:'pkItems',pkStock:'pkStock',pkPurch:'pkPurch',pkPricing:'pkPricing'});
+V24D.pkRuns=DB.load('pkRuns',[]); V24D.pkLedger=DB.load('pkLedger',[]); V24D.pkAcct=DB.load('pkAcct',[]); V24D.pkItems=DB.load('pkItems',[]); V24D.pkStock=DB.load('pkStock',[]); V24D.pkPurch=DB.load('pkPurch',[]); V24D.pkPricing=DB.load('pkPricing',[]);
 Object.keys(V24_EXTRA_KEYS).forEach(k=>{ if(!SYNC_KEYS.includes(k)) SYNC_KEYS.push(k); });
-Object.assign(V24_KEY_LABELS,{pkRuns:'فلوباك: إنتاج',pkLedger:'فلوباك: تكاليف',pkAcct:'فلوباك: حسابات عملاء',pkItems:'فلوباك: أصناف المخزن',pkStock:'فلوباك: حركات المخزن',pkPurch:'فلوباك: فواتير شراء'});
+Object.assign(V24_KEY_LABELS,{pkRuns:'فلوباك: إنتاج',pkLedger:'فلوباك: تكاليف',pkAcct:'فلوباك: حسابات عملاء',pkItems:'فلوباك: أصناف المخزن',pkStock:'فلوباك: حركات المخزن',pkPurch:'فلوباك: فواتير شراء',pkPricing:'فلوباك: تسعير الكوفير'});
 function v24PagesOfGroups(groups){ const out=[]; (groups||[]).forEach(g=>{ if(g==='dashboard') out.push('dashboard'); else if(GROUP_CONFIG[g]) out.push(...GROUP_CONFIG[g].pages); }); return out.filter(p=>p!=='audit'&&p!=='import'); }
 function v24EffectivePages(u){
   if(!u) return [];
@@ -8320,6 +8320,7 @@ function buildGroupTabBar(group,activePage){
 const V24_PRESETS={
   admin:{label:'👑 مدير (كل الصلاحيات)',role:'admin',canDelete:true,pages:null},
   prod:{label:'🏭 مسئول الإنتاج والصيانة والفنيين',role:'editor',canDelete:false,pages:['dashboard','equipment','maintenance','parts','preventive','pm-annual','reliab','production','targets','reports','analytics','archive','technicians','inventory']},
+  sales:{label:'🧾 مسئول المبيعات (حاسبة السعر فقط)',role:'editor',canDelete:false,pages:['pk-quote']},
   acct:{label:'💼 مسئول الحسابات والتكاليف',role:'editor',canDelete:false,pages:['dashboard','sales','purchases','accounts','handling','hndan','inventory','costs','financials','treasury','supAccounts','cheques','custody','obligations','reconcile','breakeven','stocktake']}
 };
 function v24RenderPageChecks(selected,all){
@@ -9659,6 +9660,189 @@ function renderSupplierStatement(){
     delBtn:e=>e.type==='سند دفع'?`<button class="btn" style="padding:2px 7px;font-size:10px;color:var(--c-danger)" onclick="deleteSupplierPayment(${e.raw.id})">🗑</button>`:e.type==='مرتجع مشتريات'?`<button class="btn" style="padding:2px 7px;font-size:10px;color:var(--c-danger)" onclick="deletePurchaseReturn(${e.raw.id})">🗑</button>`:''})+'</div>';
 }
 
+/* ===== تسعير الكوفير (مكونات + عمالة + كرتونة + كيس تغليف) ===== */
+const PK_BAG_THICK=['30','35','40'], PK_BAG_KIND=['بريلايز','مط','شفاف'];
+function pkPriceCfg(){
+  const d={density:0.92,waste:5,margin:15,labor:0,fw:18.5,kg:{plain:{},printed:{}}};
+  const c=v24Cfg('pkPriceCfg',{}); const kg={plain:Object.assign({},(c.kg||{}).plain),printed:Object.assign({},(c.kg||{}).printed)};
+  return Object.assign(d,c,{kg});
+}
+function pkKgPrice(cfg,pr,t,k){ return pkN((cfg.kg[pr==='printed'?'printed':'plain']||{})[t+'|'+k]); }
+function pkUnitPer(it){ const m=it&&/(\d{2,})/.exec(it.unit||''); return m?parseInt(m[1],10):1; }
+// حساب التسعيرة — بتتحسب لحظيًا من متوسط سعر الشراء في المخزن
+function pkPriceCalc(r,st,cfg){
+  st=st||pkAllStats(); cfg=cfg||pkPriceCfg();
+  const miss=[]; let comp=0;
+  const lines=(r.lines||[]).filter(l=>l.itemId).map(l=>{
+    const it=pkItemById(l.itemId); if(!it){ miss.push('صنف محذوف'); return {name:'(محذوف)',cost:0}; }
+    const avg=st[it.id]?st[it.id].avg:pkN(it.cost); const per=pkN(l.per)||1;
+    if(!(avg>0)) miss.push('سعر شراء غير مسجل: '+it.name);
+    const c=pkN(l.qty)*avg/per; comp+=c; return {name:it.name,qty:pkN(l.qty),per,avg,cost:c};
+  });
+  let carton=0; const ct=r.cartonId?pkItemById(r.cartonId):null;
+  if(ct){ const avg=st[ct.id]?st[ct.id].avg:pkN(ct.cost); if(!(avg>0)) miss.push('سعر الكرتونة غير مسجل'); carton=avg/(pkN(r.perCarton)||1); }
+  const t=String(r.thick||'30'), k=r.kind||'شفاف', pr=r.print==='printed'?'printed':'plain';
+  const fw=pkN(r.fw)||cfg.fw, bl=pkN(r.bl); const kgp=pkKgPrice(cfg,pr,t,k);
+  const wG=fw*bl*(pkN(t)/10000)*cfg.density*(1+cfg.waste/100);   // جرام
+  if(bl>0&&!(kgp>0)) miss.push('سعر كيلو الفيلم غير مسجل ('+t+' ميكرون / '+k+' / '+(pr==='printed'?'مطبوع':'سادة')+')');
+  const bag=wG/1000*kgp;
+  const labor=r.labor===''||r.labor===undefined||r.labor===null?cfg.labor:pkN(r.labor);
+  const cost=comp+carton+bag+labor;
+  const mg=r.margin===''||r.margin===undefined||r.margin===null?cfg.margin:pkN(r.margin);
+  const price=cost*(1+mg/100);
+  return {lines,comp,carton,bag,bagG:wG,labor,cost,margin:mg,price,per1000:price*1000,miss};
+}
+function pkRenderPricing(){
+  const box=document.getElementById('pkpc-body'); if(!box) return;
+  const st=pkAllStats(), cfg=pkPriceCfg(), w=v24Can('write');
+  const L=V24D.pkPricing.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  box.innerHTML=(L.length?`<table class="v24-table"><thead><tr><th>الكوفير</th><th>الكيس</th><th>التكلفة</th><th>هامش %</th><th>سعر القطعة</th><th>سعر الألف</th><th>تنبيه</th><th></th></tr></thead><tbody>${L.map(r=>{const c=pkPriceCalc(r,st,cfg);return `<tr><td>${v24Esc(r.name)}</td><td style="font-size:11px">${v24Esc(r.thick)}µ ${v24Esc(r.kind)} ${r.print==='printed'?'مطبوع':'سادة'}</td><td>${pkF(c.cost,3)}</td><td>${pkF(c.margin,1)}</td><td><b>${pkF(c.price,3)}</b></td><td><b>${pkF(c.per1000,0)}</b></td><td style="font-size:11px;color:#b26a00">${c.miss.length?'⚠️ '+v24Esc(c.miss[0])+(c.miss.length>1?' +'+(c.miss.length-1):''):''}</td><td>${w?`<button class="btn" onclick="pkEditPricing(${r.id})">✏️</button> <button class="btn" onclick="pkDupPricing(${r.id})">⎘</button> <button class="btn" style="color:var(--c-danger)" onclick="pkDelPricing(${r.id})">🗑</button>`:''}</td></tr>`}).join('')}</tbody></table>`:'<p style="text-align:center;color:#888;padding:30px">لسه مفيش تسعيرات — اضغط "➕ تسعيرة جديدة"</p>');
+  document.getElementById('pkpc-add').style.display=w?'':'none';
+  const adm=currentUser&&currentUser.role==='admin';
+  const cs=document.getElementById('pkpc-cfg'); cs.style.display=adm?'':'none';
+  if(adm&&!cs.dataset.open){ cs.innerHTML='<button class="btn" onclick="pkOpenPriceCfg()">⚙️ إعدادات التسعير (أسعار كيلو الفيلم، الهالك، الهامش)</button>'; }
+}
+function pkOpenPriceCfg(){
+  const c=pkPriceCfg(), cs=document.getElementById('pkpc-cfg'); cs.dataset.open='1';
+  const grid=pr=>`<table class="v24-table"><thead><tr><th>${pr==='printed'?'مطبوع':'سادة'} — سعر الكيلو</th>${PK_BAG_KIND.map(k=>`<th>${k}</th>`).join('')}</tr></thead><tbody>${PK_BAG_THICK.map(t=>`<tr><td>${t} ميكرون</td>${PK_BAG_KIND.map(k=>`<td><input type="number" min="0" step="0.01" style="width:90px" id="pkcg-${pr}-${t}-${PK_BAG_KIND.indexOf(k)}" value="${pkKgPrice(c,pr,t,k)||''}"></td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  cs.innerHTML=`<div class="v24-card"><b>⚙️ إعدادات التسعير</b>
+  <div class="v24-warn">سعر كيس التغليف = (عرض الفيلم × طول الكيس × التخانة × الكثافة × (1 + الهالك)) × سعر كيلو الفيلم. اكتب أسعار كيلو الفيلم لكل تخانة ونوع، سادة ومطبوع.</div>
+  <div class="form-row"><div class="form-group"><label>كثافة الفيلم (جم/سم³)</label><input id="pkc-den" type="number" step="0.01" value="${c.density}"></div><div class="form-group"><label>هالك الفيلم %</label><input id="pkc-waste" type="number" step="0.1" value="${c.waste}"></div><div class="form-group"><label>هامش الربح الافتراضي %</label><input id="pkc-margin" type="number" step="0.1" value="${c.margin}"></div><div class="form-group"><label>عمالة افتراضية (للقطعة)</label><input id="pkc-labor" type="number" step="0.001" value="${c.labor}"></div><div class="form-group"><label>عرض الفيلم الافتراضي (سم)</label><input id="pkc-fw" type="number" step="0.1" value="${c.fw}"></div></div>
+  ${grid('plain')}<br>${grid('printed')}<br>
+  <button class="btn btn-primary" onclick="pkSavePriceCfg()">💾 حفظ الإعدادات</button> <button class="btn" onclick="document.getElementById('pkpc-cfg').dataset.open='';pkRenderPricing()">إغلاق</button></div>`;
+}
+function pkSavePriceCfg(){
+  if(!currentUser||currentUser.role!=='admin'){alert('الإعدادات للمدير فقط');return;}
+  const g=id=>pkN(v24v(id)); const kg={plain:{},printed:{}};
+  for(const pr of ['plain','printed']) for(const t of PK_BAG_THICK) PK_BAG_KIND.forEach((k,i)=>{ const v=g(`pkcg-${pr}-${t}-${i}`); if(v<0){return;} kg[pr][t+'|'+k]=v; });
+  const o={density:g('pkc-den'),waste:g('pkc-waste'),margin:g('pkc-margin'),labor:g('pkc-labor'),fw:g('pkc-fw'),kg};
+  if(!(o.density>0)||o.waste<0||o.margin<0||o.labor<0||!(o.fw>0)){alert('راجع القيم: الكثافة وعرض الفيلم أكبر من صفر، وغير مسموح بسالب');return;}
+  if(Object.values(kg.plain).concat(Object.values(kg.printed)).some(x=>x<0)){alert('لا يُقبل سعر سالب');return;}
+  v24SetCfg('pkPriceCfg',o); document.getElementById('pkpc-cfg').dataset.open=''; pkRenderPricing(); alert('اتحفظت ✅');
+}
+function pkPricingForm(r){
+  const c=pkPriceCfg();
+  r=r||{name:'',lines:[{itemId:'',qty:'',per:''}],cartonId:'',perCarton:'',thick:'30',kind:'شفاف',print:'plain',fw:'',bl:'',labor:'',margin:'',note:''};
+  const dl=`<datalist id="pkpc-dl">${V24D.pkItems.map(i=>`<option value="${v24Esc(i.name)}">`).join('')}</datalist>`;
+  const nm=id=>{const it=pkItemById(id);return it?it.name:'';};
+  return `<div class="v24-card"><b>${r.id?'تعديل تسعيرة':'تسعيرة جديدة'}</b><input type="hidden" id="pkpc-id" value="${r.id||''}">${dl}
+  <div class="form-row"><div class="form-group" style="flex:2"><label>اسم الكوفير</label><input id="pkpc-name" list="pkpc-dl" value="${v24Esc(r.name)}"></div><div class="form-group"><label>ملاحظة</label><input id="pkpc-note" value="${v24Esc(r.note||'')}"></div></div>
+  <b style="font-size:12px">مكونات الكوفير (من أصناف المخزن)</b>
+  <table class="v24-table" id="pkpc-lines"><thead><tr><th>الصنف</th><th>الكمية في الكوفير</th><th>عدد القطع في وحدة المخزن</th><th></th></tr></thead><tbody>${(r.lines||[]).map(l=>pkPricingLine(l,nm)).join('')}</tbody></table>
+  <button class="btn" onclick="pkPricingAddLine()">➕ مكوّن</button>
+  <div class="form-row" style="margin-top:10px"><div class="form-group" style="flex:2"><label>الكرتونة (صنف من المخزن)</label><input id="pkpc-carton" list="pkpc-dl" value="${v24Esc(nm(r.cartonId))}" oninput="pkPricingPrev()"></div><div class="form-group"><label>عدد الكوفيرات في الكرتونة</label><input id="pkpc-percarton" type="number" min="1" value="${r.perCarton||''}" oninput="pkPricingPrev()"></div><div class="form-group"><label>عمالة للقطعة (فاضي = الافتراضي ${c.labor})</label><input id="pkpc-labor" type="number" min="0" step="0.001" value="${r.labor}" oninput="pkPricingPrev()"></div></div>
+  <b style="font-size:12px">كيس التغليف</b>
+  <div class="form-row"><div class="form-group"><label>التخانة</label><select id="pkpc-thick" onchange="pkPricingPrev()">${PK_BAG_THICK.map(t=>`<option ${t===String(r.thick)?'selected':''} value="${t}">${t} ميكرون</option>`).join('')}</select></div><div class="form-group"><label>نوع الكيس</label><select id="pkpc-kind" onchange="pkPricingPrev()">${PK_BAG_KIND.map(k=>`<option ${k===r.kind?'selected':''}>${k}</option>`).join('')}</select></div><div class="form-group"><label>الطباعة</label><select id="pkpc-print" onchange="pkPricingPrev()"><option value="plain" ${r.print!=='printed'?'selected':''}>سادة</option><option value="printed" ${r.print==='printed'?'selected':''}>مطبوع</option></select></div><div class="form-group"><label>عرض الفيلم سم (فاضي = ${c.fw})</label><input id="pkpc-fw" type="number" min="0" step="0.1" value="${r.fw}" oninput="pkPricingPrev()"></div><div class="form-group"><label>طول الكيس سم</label><input id="pkpc-bl" type="number" min="0" step="0.1" value="${r.bl}" oninput="pkPricingPrev()"></div><div class="form-group"><label>هامش الربح % (فاضي = ${c.margin})</label><input id="pkpc-margin" type="number" min="0" step="0.1" value="${r.margin}" oninput="pkPricingPrev()"></div></div>
+  <div id="pkpc-prev" style="margin:10px 0"></div>
+  <button class="btn btn-primary" onclick="pkSavePricing()">💾 حفظ</button> <button class="btn" onclick="document.getElementById('pkpc-form').innerHTML=''">إلغاء</button></div>`;
+}
+function pkPricingLine(l,nm){ nm=nm||(id=>{const it=pkItemById(id);return it?it.name:'';}); return `<tr><td><input class="pkpl-item" list="pkpc-dl" style="width:100%" value="${v24Esc(nm(l.itemId))}" oninput="pkPricingLineItem(this)"></td><td><input class="pkpl-qty" type="number" min="0" step="0.001" style="width:90px" value="${l.qty===undefined?'':l.qty}" oninput="pkPricingPrev()"></td><td><input class="pkpl-per" type="number" min="1" style="width:90px" value="${l.per||''}" oninput="pkPricingPrev()"></td><td><button class="btn" onclick="this.closest('tr').remove();pkPricingPrev()">✖</button></td></tr>`; }
+function pkPricingAddLine(){ document.querySelector('#pkpc-lines tbody').insertAdjacentHTML('beforeend',pkPricingLine({itemId:'',qty:'',per:''})); }
+function pkPricingLineItem(inp){ const it=V24D.pkItems.find(i=>i.name===inp.value.trim()); if(it){ const per=inp.closest('tr').querySelector('.pkpl-per'); if(!per.value) per.value=pkUnitPer(it); } pkPricingPrev(); }
+function pkPricingRead(){
+  const byName=n=>V24D.pkItems.find(i=>i.name===String(n||'').trim());
+  const lines=[]; let bad='';
+  document.querySelectorAll('#pkpc-lines tbody tr').forEach(tr=>{
+    const n=tr.querySelector('.pkpl-item').value.trim(), q=tr.querySelector('.pkpl-qty').value, p=tr.querySelector('.pkpl-per').value;
+    if(!n&&!q) return; const it=byName(n); if(!it){ bad='صنف غير موجود في المخزن: '+n; return; }
+    lines.push({itemId:it.id,qty:pkN(q),per:pkN(p)||pkUnitPer(it)});
+  });
+  const cn=v24v('pkpc-carton').trim(), ct=cn?byName(cn):null; if(cn&&!ct) bad=bad||'الكرتونة مش موجودة في المخزن: '+cn;
+  return {err:bad,rec:{name:v24v('pkpc-name').trim(),note:v24v('pkpc-note').trim(),lines,cartonId:ct?ct.id:'',perCarton:pkN(v24v('pkpc-percarton')),thick:v24v('pkpc-thick'),kind:v24v('pkpc-kind'),print:v24v('pkpc-print'),fw:v24v('pkpc-fw'),bl:v24v('pkpc-bl'),labor:v24v('pkpc-labor'),margin:v24v('pkpc-margin')}};
+}
+function pkPricingPrev(){
+  const el=document.getElementById('pkpc-prev'); if(!el) return; const x=pkPricingRead(), c=pkPriceCalc(x.rec);
+  el.innerHTML=`<div class="v24-kpis"><div class="v24-kpi"><div class="l">المكونات</div><div class="v">${pkF(c.comp,3)}</div></div><div class="v24-kpi"><div class="l">الكرتونة</div><div class="v">${pkF(c.carton,3)}</div></div><div class="v24-kpi"><div class="l">الكيس (${pkF(c.bagG,2)} جم)</div><div class="v">${pkF(c.bag,3)}</div></div><div class="v24-kpi"><div class="l">العمالة</div><div class="v">${pkF(c.labor,3)}</div></div><div class="v24-kpi"><div class="l">التكلفة</div><div class="v">${pkF(c.cost,3)}</div></div><div class="v24-kpi"><div class="l">سعر القطعة (+${pkF(c.margin,1)}%)</div><div class="v">${pkF(c.price,3)}</div></div><div class="v24-kpi"><div class="l">سعر الألف</div><div class="v">${pkF(c.per1000,0)}</div></div></div>${x.err?`<div style="color:var(--c-danger);font-size:12px">⚠️ ${v24Esc(x.err)}</div>`:''}${c.miss.map(m=>`<div style="color:#b26a00;font-size:12px">⚠️ ${v24Esc(m)}</div>`).join('')}`;
+}
+function pkNewPricing(){ document.getElementById('pkpc-form').innerHTML=pkPricingForm(); pkPricingPrev(); }
+function pkEditPricing(id){ const r=V24D.pkPricing.find(x=>x.id===id); if(r&&v24Can('write')){ document.getElementById('pkpc-form').innerHTML=pkPricingForm(r); pkPricingPrev(); window.scrollTo(0,0); } }
+function pkDupPricing(id){ const r=V24D.pkPricing.find(x=>x.id===id); if(!r||!v24Can('write')) return; const c=JSON.parse(JSON.stringify(r)); delete c.id; c.name=r.name+' (نسخة)'; document.getElementById('pkpc-form').innerHTML=pkPricingForm(c); pkPricingPrev(); window.scrollTo(0,0); }
+function pkSavePricing(){
+  if(!v24Can('write')){alert('مفيش صلاحية تعديل');return;}
+  const x=pkPricingRead(); if(x.err){alert(x.err);return;} const o=x.rec;
+  if(!o.name){alert('اسم الكوفير مطلوب');return;}
+  if(o.lines.some(l=>l.qty<0)||o.perCarton<0||pkN(o.fw)<0||pkN(o.bl)<0||pkN(o.labor)<0||pkN(o.margin)<0){alert('لا يُقبل رقم سالب');return;}
+  if(o.cartonId&&!(o.perCarton>0)){alert('اكتب عدد الكوفيرات في الكرتونة');return;}
+  const id=parseInt(v24v('pkpc-id')); o.updated=today();
+  if(V24D.pkPricing.some(r=>r.id!==id&&r.name===o.name)){alert('فيه تسعيرة بنفس الاسم');return;}
+  if(id){ Object.assign(V24D.pkPricing.find(r=>r.id===id),o); } else V24D.pkPricing.push(Object.assign({id:pkNextId(V24D.pkPricing),createdBy:v24Who()},o));
+  DB.save('pkPricing',V24D.pkPricing); document.getElementById('pkpc-form').innerHTML=''; pkRenderPricing();
+}
+function pkDelPricing(id){ if(!v24Can('delete')){alert('الحذف للمدير أو بصلاحية حذف');return;} const r=V24D.pkPricing.find(x=>x.id===id); if(!r||!confirm('حذف تسعيرة '+r.name+'؟')) return; V24.reason='حذف تسعيرة'; V24D.pkPricing=V24D.pkPricing.filter(x=>x.id!==id); DB.save('pkPricing',V24D.pkPricing); pkRenderPricing(); }
+
+// ===== حاسبة السعر لمسئول المبيعات: يدخل المكونات ويشوف السعر النهائي فقط =====
+// الهامش والعمالة وعرض الفيلم وأسعار الشراء كلها من إعدادات المدير، ومخفية عنه.
+function pkQuoteRead(){
+  const byName=n=>V24D.pkItems.find(i=>i.name===String(n||'').trim());
+  const lines=[]; let bad='';
+  document.querySelectorAll('#pkq-lines tbody tr').forEach(tr=>{
+    const n=tr.querySelector('.pkq-item').value.trim(), q=tr.querySelector('.pkq-qty').value;
+    if(!n&&!q) return; const it=byName(n); if(!it){ bad='الصنف مش موجود في القائمة: '+n; return; }
+    lines.push({itemId:it.id,qty:pkN(q),per:pkUnitPer(it)});
+  });
+  const cn=v24v('pkq-carton').trim(), ct=cn?byName(cn):null; if(cn&&!ct) bad=bad||'الكرتونة مش موجودة في القائمة: '+cn;
+  return {err:bad,rec:{name:v24v('pkq-name').trim(),lines,cartonId:ct?ct.id:'',perCarton:pkN(v24v('pkq-percarton')),thick:v24v('pkq-thick'),kind:v24v('pkq-kind'),print:v24v('pkq-print'),fw:'',bl:v24v('pkq-bl'),labor:'',margin:''}};
+}
+function pkQuotePrev(){
+  const el=document.getElementById('pkq-res'); if(!el) return; const x=pkQuoteRead(); const hasAny=x.rec.lines.length||x.rec.cartonId||pkN(x.rec.bl)>0;
+  if(!hasAny){ el.innerHTML='<div style="color:#888;font-size:13px">أضف المكونات وطول الكيس وهيظهر السعر هنا</div>'; return; }
+  const c=pkPriceCalc(x.rec); const ok=c.price>0&&!c.miss.length&&!x.err;
+  el.innerHTML=ok?`<div class="v24-kpis"><div class="v24-kpi"><div class="l">سعر القطعة</div><div class="v" style="font-size:26px">${pkF(c.price,2)} ج</div></div><div class="v24-kpi"><div class="l">سعر الألف</div><div class="v" style="font-size:26px">${pkF(c.per1000,0)} ج</div></div></div>`
+    :`<div style="color:#b26a00;font-size:13px">⚠️ ${x.err?v24Esc(x.err):'السعر مش مكتمل — فيه سعر مش مسجّل عند الإدارة، بلّغهم قبل ما تعتمد السعر.'}</div>`;
+}
+function pkQuoteLine(l){ const it=l.itemId?pkItemById(l.itemId):null; return `<tr><td><input class="pkq-item" list="pkq-dl" style="width:100%" value="${v24Esc(it?it.name:'')}" oninput="pkQuotePrev()"></td><td><input class="pkq-qty" type="number" min="0" step="0.001" style="width:100px" value="${l.qty===undefined?'':l.qty}" oninput="pkQuotePrev()"></td><td><button class="btn" onclick="this.closest('tr').remove();pkQuotePrev()">✖</button></td></tr>`; }
+function pkQuoteAddLine(l){ document.querySelector('#pkq-lines tbody').insertAdjacentHTML('beforeend',pkQuoteLine(l||{itemId:'',qty:''})); }
+function pkRenderQuote(){
+  const box=document.getElementById('pkq-form'); if(!box) return;
+  if(!box.dataset.ready){ pkQuoteFormInit(); }
+  else document.getElementById('pkq-dl').innerHTML=V24D.pkItems.map(i=>`<option value="${v24Esc(i.name)}">`).join('');
+  pkQuoteList();
+}
+function pkQuoteFormInit(r){
+  const box=document.getElementById('pkq-form'); box.dataset.ready='1'; r=r||{name:'',lines:[{itemId:'',qty:''}],cartonId:'',perCarton:'',thick:'30',kind:'شفاف',print:'plain',bl:''};
+  const ct=r.cartonId?pkItemById(r.cartonId):null;
+  box.innerHTML=`<div class="v24-card"><input type="hidden" id="pkq-id" value="${r.id||''}"><datalist id="pkq-dl">${V24D.pkItems.map(i=>`<option value="${v24Esc(i.name)}">`).join('')}</datalist>
+  <div class="form-row"><div class="form-group" style="flex:2"><label>اسم الكوفير / العميل</label><input id="pkq-name" value="${v24Esc(r.name)}"></div></div>
+  <b style="font-size:12px">المكونات</b>
+  <table class="v24-table" id="pkq-lines"><thead><tr><th>الصنف</th><th>الكمية في الكوفير الواحد</th><th></th></tr></thead><tbody>${(r.lines&&r.lines.length?r.lines:[{itemId:'',qty:''}]).map(pkQuoteLine).join('')}</tbody></table>
+  <button class="btn" onclick="pkQuoteAddLine()">➕ مكوّن</button>
+  <div class="form-row" style="margin-top:10px"><div class="form-group" style="flex:2"><label>الكرتونة (اختياري)</label><input id="pkq-carton" list="pkq-dl" value="${v24Esc(ct?ct.name:'')}" oninput="pkQuotePrev()"></div><div class="form-group"><label>عدد الكوفيرات في الكرتونة</label><input id="pkq-percarton" type="number" min="1" value="${r.perCarton||''}" oninput="pkQuotePrev()"></div></div>
+  <b style="font-size:12px">كيس التغليف</b>
+  <div class="form-row"><div class="form-group"><label>التخانة</label><select id="pkq-thick" onchange="pkQuotePrev()">${PK_BAG_THICK.map(t=>`<option value="${t}" ${t===String(r.thick)?'selected':''}>${t} ميكرون</option>`).join('')}</select></div><div class="form-group"><label>نوع الكيس</label><select id="pkq-kind" onchange="pkQuotePrev()">${PK_BAG_KIND.map(k=>`<option ${k===r.kind?'selected':''}>${k}</option>`).join('')}</select></div><div class="form-group"><label>الطباعة</label><select id="pkq-print" onchange="pkQuotePrev()"><option value="plain" ${r.print!=='printed'?'selected':''}>سادة</option><option value="printed" ${r.print==='printed'?'selected':''}>مطبوع</option></select></div><div class="form-group"><label>طول الكيس (سم)</label><input id="pkq-bl" type="number" min="0" step="0.1" value="${r.bl||''}" oninput="pkQuotePrev()"></div></div>
+  <div id="pkq-res" style="margin:12px 0"></div>
+  <button class="btn btn-primary" onclick="pkQuoteSave()">💾 حفظ التسعيرة</button> <button class="btn" onclick="pkQuoteNew()">🆕 تسعيرة جديدة</button></div>`;
+  pkQuotePrev();
+}
+function pkQuoteNew(){ pkQuoteFormInit(); }
+function pkQuoteOpen(id){ const r=V24D.pkPricing.find(x=>x.id===id); if(r){ pkQuoteFormInit(r); window.scrollTo(0,0); } }
+function pkQuoteSave(){
+  if(!v24Can('write')){alert('مفيش صلاحية');return;}
+  const x=pkQuoteRead(); if(x.err){alert(x.err);return;} const o=x.rec;
+  if(!o.name){alert('اكتب اسم الكوفير أو العميل');return;}
+  if(!o.lines.length){alert('أضف مكوّن واحد على الأقل');return;}
+  if(o.lines.some(l=>!(l.qty>0))){alert('اكتب كمية لكل مكوّن');return;}
+  if(o.cartonId&&!(o.perCarton>0)){alert('اكتب عدد الكوفيرات في الكرتونة');return;}
+  if(pkN(o.bl)<0){alert('لا يُقبل رقم سالب');return;}
+  const id=parseInt(v24v('pkq-id')); o.updated=today();
+  const ex=id?V24D.pkPricing.find(r=>r.id===id):null;
+  if(ex&&!(currentUser.role==='admin'||ex.createdBy===v24Who())){alert('دي تسعيرة غيرك — اعمل تسعيرة جديدة');return;}
+  if(V24D.pkPricing.some(r=>r.id!==id&&r.name===o.name)){alert('فيه تسعيرة بنفس الاسم، غيّر الاسم');return;}
+  if(ex){ const keep={fw:ex.fw,labor:ex.labor,margin:ex.margin,note:ex.note}; Object.assign(ex,o,currentUser.role==='admin'?{}:keep); }
+  else V24D.pkPricing.push(Object.assign({id:pkNextId(V24D.pkPricing),createdBy:v24Who()},o));
+  DB.save('pkPricing',V24D.pkPricing); pkQuoteFormInit(); pkQuoteList();
+}
+function pkQuoteDel(id){
+  const r=V24D.pkPricing.find(x=>x.id===id); if(!r) return;
+  if(!(currentUser.role==='admin'||r.createdBy===v24Who())){alert('تقدر تمسح تسعيراتك بس');return;}
+  if(!confirm('حذف تسعيرة '+r.name+'؟')) return; V24.reason='حذف تسعيرة'; V24D.pkPricing=V24D.pkPricing.filter(x=>x.id!==id); DB.save('pkPricing',V24D.pkPricing); pkQuoteList();
+}
+function pkQuoteList(){
+  const body=document.getElementById('pkq-list'); if(!body) return; const st=pkAllStats(), cfg=pkPriceCfg();
+  const adm=currentUser&&currentUser.role==='admin', me=v24Who();
+  const L=V24D.pkPricing.slice().sort((a,b)=>(b.updated||'').localeCompare(a.updated||'')||b.id-a.id);
+  body.innerHTML=L.length?`<table class="v24-table"><thead><tr><th>الكوفير / العميل</th><th>سعر القطعة</th><th>سعر الألف</th><th>التاريخ</th><th></th></tr></thead><tbody>${L.map(r=>{const c=pkPriceCalc(r,st,cfg);const ok=c.price>0&&!c.miss.length;const mine=adm||r.createdBy===me;return `<tr><td>${v24Esc(r.name)}</td><td><b>${ok?pkF(c.price,2):'—'}</b></td><td><b>${ok?pkF(c.per1000,0):'—'}</b></td><td style="font-size:11px;color:#888">${v24Esc(r.updated||'')}${ok?'':' (غير مكتمل)'}</td><td>${mine?`<button class="btn" onclick="pkQuoteOpen(${r.id})">✏️</button> <button class="btn" style="color:var(--c-danger)" onclick="pkQuoteDel(${r.id})">🗑</button>`:''}</td></tr>`}).join('')}</tbody></table>`:'<p style="text-align:center;color:#888;padding:20px">مفيش تسعيرات محفوظة</p>';
+}
+
 // ================= v24.3 — استيراد حزم البيانات (للمدير فقط) =================
 // حزمة JSON: {version,batch,treasury:[...],pkAcct:[...]} — كل سجل له importKey فمفيش تكرار لو اتستورد تاني، وكل دفعة تتلغي بالكامل.
 let v24ImpPack=null;
@@ -9973,6 +10157,8 @@ deleteUser=async function(id){
   v24AddPage('packaging','pk-accounts','👥 حسابات العملاء',pkRenderAccounts,`<div class="p-content"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pk-acc-add" onclick="pkNewAcct('acc')">➕ حركة (قبض / مبيعة)</button></div><div id="pk-acc-form"></div><div class="v24-kpis" id="pk-acc-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-acc-list"></div></div><div id="pk-acc-stm"></div></div>`);
   v24AddPage('packaging','pk-stock','📦 مخزن الكوفير',pkRenderStock,`<div class="p-content"><div class="v24-warn">مخزن الكوفير مستقل عن مخزون مصنع الحقن. الرصيد = رصيد أول المدة + الإضافات − الصرف (والتقييم بالمتوسط المتحرك).</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><select id="pks-g" onchange="pkRenderStock()" style="padding:6px 10px"></select><input id="pks-q" placeholder="🔍 بحث بالاسم" oninput="pkRenderStock()" style="padding:6px 10px"><label style="font-size:12px"><input type="checkbox" id="pks-nz" onchange="pkRenderStock()"> الأصناف برصيد فقط</label><button class="btn btn-primary" id="pks-open" onclick="pkOpeningForm()">📋 رصيد أول المدة</button><button class="btn btn-primary" id="pks-mv" onclick="pkMoveNew()">➕ حركة مخزن</button><button class="btn" id="pks-add" onclick="pkNewItem()">➕ صنف جديد</button></div><div id="pks-form"></div><div class="v24-kpis" id="pks-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pks-body"></div></div><div id="pks-card"></div><div id="pks-recent" style="margin-top:10px"></div></div>`);
   v24AddPage('packaging','pk-purch','🧾 فواتير الشراء',pkRenderPurch,`<div class="p-content"><div class="v24-warn">كل فاتورة شراء بتضيف أصنافها للمخزن تلقائيًا، وتسجّل المدفوع كمصروف في خزنة الكوفير (اختياري). المشتريات القديمة اللي اتسددت قبل كده موجودة في الخزنة — متدخلهاش تاني هنا إلا لو عايز تضيف أصنافها للمخزن عن طريق «حركة مخزن» بدل الفاتورة.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pkp-filter"></span><button class="btn btn-primary" id="pkp-add" onclick="pkPurchNew()">➕ فاتورة شراء</button></div><div id="pkp-form"></div><div class="v24-kpis" id="pkp-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pkp-body"></div></div></div>`);
+  v24AddPage('packaging','pk-pricing','🧮 تسعير الكوفير',pkRenderPricing,`<div class="p-content"><div class="v24-warn">السعر = (مكونات الكوفير من متوسط سعر الشراء في المخزن + الكرتونة + كيس التغليف + العمالة) × (1 + هامش الربح). أي تغيير في أسعار الشراء بيتحسب تلقائيًا.</div><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pkpc-add" onclick="pkNewPricing()">➕ تسعيرة جديدة</button></div><div id="pkpc-cfg" style="margin-bottom:10px"></div><div id="pkpc-form"></div><div id="pkpc-body"></div></div>`);
+  v24AddPage('packaging','pk-quote','🧮 حاسبة السعر',pkRenderQuote,`<div class="p-content"><div class="v24-warn">اكتب مكونات الكوفير وحدد الكيس، وهيظهر لك السعر النهائي فورًا. السعر بيتحسب تلقائيًا من إعدادات الإدارة.</div><div id="pkq-form"></div><h3 style="margin:16px 0 8px">التسعيرات المحفوظة</h3><div id="pkq-list"></div></div>`);
   v24AddPage('packaging','pk-analysis','📊 تحليل الأداء',pkRenderAnalysis,`<div class="p-content"><div style="margin-bottom:10px" id="pk-an-filter"></div><div class="v24-kpis" id="pk-an-kpis"></div><div id="pk-an-advice" style="margin-bottom:10px"></div><div id="pk-an-body"></div><div class="v24-card"><b>إعدادات الماكينة</b> <span style="font-size:11px;color:#888">(للمدير)</span><div class="form-row"><div class="form-group"><label>اسم الماكينة</label><input id="pk-name"></div><div class="form-group"><label>السرعة المعيارية (عبوة/دقيقة)</label><input id="pk-speed" type="number" min="1"></div><div class="form-group" style="display:flex;align-items:flex-end"><button class="btn" onclick="pkSaveCfg()">حفظ</button></div></div></div></div>`);
   v24AddPage('finance','cheques','🧾 الشيكات',v24RenderCheques,`<div class="p-content"><div class="v24-kpis" id="chq-kpis"></div><div class="filter-bar" style="margin-bottom:10px;display:flex;gap:8px">${sel('chq-st','<option value="">كل الحالات</option>'+V24_CHEQUE_ST.map(x=>`<option>${x}</option>`).join(''),'v24RenderCheques')}${sel('chq-tp','<option value="">وارد وصادر</option><option value="in">وارد</option><option value="out">صادر</option>','v24RenderCheques')}</div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="chq-body"></div></div></div>`);
   v24AddPage('finance','custody','👛 العُهد',v24RenderCustody,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">الصرف للشخص بيتسجل من الخزينة بند «عهدة (صرف لشخص)». هنا بتسجّل مصروفاته بالإيصالات، والباقي نقدًا بيرجع بند «تسوية / رد عهدة».</p><div class="v24-kpis" id="cus-kpis"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="cus-body"></div></div></div>`);
