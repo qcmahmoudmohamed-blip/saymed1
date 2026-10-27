@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 26-10 • فيه تسعير الكوفير</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 27-10 • استيراد حركات يوليو–أكتوبر</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -9850,16 +9850,16 @@ function v24ImpBatches(){ return v24Cfg('importBatches',[]); }
 function v24RenderImport(){
   const el=document.getElementById('imp-batches'); if(!el) return;
   const b=v24ImpBatches();
-  el.innerHTML=b.length?`<table class="v24-table"><thead><tr><th>الدفعة</th><th>التاريخ</th><th>بواسطة</th><th>خزينة</th><th>فلوباك (عملاء)</th><th>خزنة الكوفير</th><th>أصناف</th><th></th></tr></thead><tbody>${b.map(x=>`<tr><td>${v24Esc(x.id)}</td><td>${v24Esc(x.at.slice(0,16).replace('T',' '))}</td><td>${v24Esc(x.by)}</td><td>${x.treasury}</td><td>${x.pkAcct}</td><td>${x.pkLedger||0}</td><td>${x.pkItems||0}</td><td><button class="btn" style="padding:2px 8px;font-size:11px;color:var(--c-danger)" onclick="v24ImpUndo('${x.id}')">↩️ إلغاء الدفعة</button></td></tr>`).join('')}</tbody></table>`:'<div style="color:#888;padding:8px">لا توجد دفعات مستوردة</div>';
+  el.innerHTML=b.length?`<table class="v24-table"><thead><tr><th>الدفعة</th><th>التاريخ</th><th>بواسطة</th><th>خزينة</th><th>فلوباك (عملاء)</th><th>خزنة الكوفير</th><th>أصناف</th><th>حركات نقدية</th><th></th></tr></thead><tbody>${b.map(x=>`<tr><td>${v24Esc(x.id)}</td><td>${v24Esc(x.at.slice(0,16).replace('T',' '))}</td><td>${v24Esc(x.by)}</td><td>${x.treasury}</td><td>${x.pkAcct}</td><td>${x.pkLedger||0}</td><td>${x.pkItems||0}</td><td>${x.cash||0}</td><td><button class="btn" style="padding:2px 8px;font-size:11px;color:var(--c-danger)" onclick="v24ImpUndo('${x.id}')">↩️ إلغاء الدفعة</button></td></tr>`).join('')}</tbody></table>`:'<div style="color:#888;padding:8px">لا توجد دفعات مستوردة</div>';
 }
 function v24ImpLoad(inp){
   const f=inp.files&&inp.files[0]; if(!f) return;
   const rd=new FileReader();
-  rd.onload=()=>{ try{ const p=JSON.parse(rd.result); if(!p||![1,2].includes(p.version)||!p.batch) throw new Error('ملف غير صالح'); v24ImpPack=p; v24ImpPreview(); }catch(e){ v24ImpPack=null; document.getElementById('imp-preview').innerHTML='<div class="v24-bad">تعذر قراءة الملف: '+v24Esc(e.message)+'</div>'; } };
+  rd.onload=()=>{ try{ const p=JSON.parse(rd.result); if(!p||![1,2,3].includes(p.version)||!p.batch) throw new Error('ملف غير صالح'); v24ImpPack=p; v24ImpPreview(); }catch(e){ v24ImpPack=null; document.getElementById('imp-preview').innerHTML='<div class="v24-bad">تعذر قراءة الملف: '+v24Esc(e.message)+'</div>'; } };
   rd.readAsText(f,'utf-8');
 }
 function v24ImpPlan(){
-  const p=v24ImpPack, plan={treasury:[],dupT:[],doneT:0,pkAcct:[],doneA:0,pkLedger:[],doneL:0,pkItems:[],doneI:0};
+  const p=v24ImpPack, plan={cash:[],cashDup:[],cashNear:[],doneC:0,treasury:[],dupT:[],doneT:0,pkAcct:[],doneA:0,pkLedger:[],doneL:0,pkItems:[],doneI:0};
   const keysT=new Set(treasury.map(t=>t.importKey).filter(Boolean)), keysA=new Set(V24D.pkAcct.map(t=>t.importKey).filter(Boolean));
   (p.treasury||[]).forEach(t=>{
     if(keysT.has(t.importKey)){ plan.doneT++; return; }
@@ -9871,7 +9871,66 @@ function v24ImpPlan(){
   const keysI=new Set(V24D.pkItems.map(t=>t.importKey).filter(Boolean)), namesI=new Set(V24D.pkItems.map(t=>t.name));
   (p.pkItems||[]).forEach(a=>{ if(keysI.has(a.importKey)||namesI.has(a.name)){ plan.doneI++; return; } plan.pkItems.push(a); });
   (p.pkAcct||[]).forEach(a=>{ if(keysA.has(a.importKey)){ plan.doneA++; return; } plan.pkAcct.push(a); });
+  v24ImpPlanCash(p,plan);
   return plan;
+}
+
+// ---------- حركات نقدية موزعة على كل الخزائن/الحسابات مع منع التكرار ----------
+function v24Nz(s){ return String(s||'').trim().replace(/\s+/g,' ').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه'); }
+function v24DayDiff(a,b){ return Math.abs((new Date(a)-new Date(b))/864e5); }
+// كل الحركات النقدية الموجودة فعلًا في البرنامج (اتجاه + تاريخ + مبلغ)
+function v24ExistingCash(){
+  const o=[]; const add=(src,r,dir,desc)=>{ if(!r||!r.date) return; o.push({src,date:r.date,dir,amount:Number(r.amount)||0,desc:desc||'',key:r.importKey||'',used:false}); };
+  treasury.forEach(t=>add('الخزينة',t,t.type==='in'?'in':'out',(t.category||'')+' '+(t.desc||'')));
+  payments.forEach(t=>add('تحصيل عملاء',t,'in',(t.client||'')+' '+(t.notes||'')));
+  supplierPayments.forEach(t=>add('سندات موردين',t,'out',(t.supplier||'')+' '+(t.notes||'')));
+  V24D.pkLedger.forEach(t=>add('خزنة الكوفير',t,t.kind==='cost'?'out':'in',(t.category||'')+' '+(t.desc||'')));
+  V24D.pkAcct.forEach(t=>{ if(t.kind==='receipt'||t.kind==='sale_cash') add('حسابات فلوباك',t,'in',(t.customer||'')+' '+(t.note||'')); });
+  return o;
+}
+function v24ImpResolve(c){
+  // يحدد المخزن اللي هتنزل فيه الحركة بحسب الموجود فعلًا في البرنامج
+  const r={...c};
+  if(c.target==='payment'){
+    const n=v24Nz(c.client), hit=(clientsList||[]).filter(x=>v24Nz(x)===n);
+    if(hit.length===1) r.client=hit[0]; else { r.target='treasury'; Object.assign(r,c.fb,{subcategory:'',notes:(c.notes||'')+' — العميل مش مسجل في حسابات الحقن'}); r.unresolved='عميل حقن غير مسجل: '+c.client; }
+  } else if(c.target==='supplierPayment'){
+    const n=v24Nz(c.supplier), hit=(suppliersList||[]).filter(x=>v24Nz(x)===n);
+    if(hit.length===1) r.supplier=hit[0]; else { r.target='treasury'; Object.assign(r,c.fb,{subcategory:''}); r.unresolved='مورد غير مسجل: '+c.supplier; }
+  } else if(c.target==='pkAcct'){
+    const n=v24Nz(c.customer), names=[...new Set(V24D.pkAcct.map(x=>x.customer))];
+    const exact=names.filter(x=>v24Nz(x)===n);
+    if(exact.length) r.customer=exact[0];
+    else { const pre=names.filter(x=>v24Nz(x).startsWith(n+' ')||n.startsWith(v24Nz(x)+' ')); if(pre.length===1) r.customer=pre[0]; else r.newCustomer=true; }
+  }
+  return r;
+}
+function v24ImpPlanCash(p,plan){
+  const list=p.cash||[]; if(!list.length) return;
+  const ex=v24ExistingCash(); const pkeys=new Set(list.map(c=>c.key));
+  const have=new Set(ex.filter(e=>e.key&&pkeys.has(e.key)).map(e=>e.key));
+  ex.forEach(e=>{ if(e.key&&pkeys.has(e.key)) e.used=true; });
+  list.forEach(c=>{
+    if(have.has(c.key)){ plan.doneC++; return; }
+    const r=v24ImpResolve(c);
+    let m=ex.find(e=>!e.used&&e.dir===c.dir&&e.date===c.date&&Math.abs(e.amount-c.amount)<0.005);
+    if(m){ m.used=true; plan.cashDup.push({c:r,dup:m}); return; }
+    m=ex.find(e=>!e.used&&e.dir===c.dir&&Math.abs(e.amount-c.amount)<0.005&&v24DayDiff(e.date,c.date)<=3);
+    if(m){ m.used=true; plan.cashNear.push({c:r,dup:m}); return; }
+    plan.cash.push(r);
+  });
+}
+function v24ImpAddCash(c,batch){
+  const base={date:c.date,amount:c.amount,importKey:c.key,importBatch:batch,fromImport:true};
+  const note=c.notes||'';
+  if(c.target==='treasury'){
+    const r={...base,id:nextId.tre++,type:c.dir,category:c.category,subcategory:c.subcategory||'',party:c.party||'',desc:c.desc||'',method:'كاش',ref:'',notes:note};
+    if(c.contractor){ r.contractor=c.contractor; r.desc=(r.desc?r.desc+' — ':'')+c.contractor; }
+    treasury.push(r);
+  } else if(c.target==='payment') payments.push({...base,id:nextId.pay++,client:c.client,method:'كاش',ref:'',notes:(c.desc||'')+' — '+note});
+  else if(c.target==='supplierPayment') supplierPayments.push({...base,id:nextId.supPay++,supplier:c.supplier,method:'كاش',ref:'',notes:(c.desc||'')+' — '+note});
+  else if(c.target==='pkLedger') V24D.pkLedger.push({...base,id:V24D.pkLedger.reduce((m,x)=>Math.max(m,x.id),0)+1,kind:c.kind,category:c.category,desc:c.desc||c.category,ref:'',createdBy:v24Who()});
+  else if(c.target==='pkAcct') V24D.pkAcct.push({...base,id:V24D.pkAcct.reduce((m,x)=>Math.max(m,x.id),0)+1,customer:c.customer,kind:'receipt',ref:'',note:(c.desc||'')+' — حركة خزنة',createdBy:v24Who()});
 }
 function v24ImpPreview(){
   const p=v24ImpPack, pl=v24ImpPlan(); const sum=a=>a.reduce((t,x)=>t+(Number(x.amount)||0),0);
@@ -9885,14 +9944,26 @@ function v24ImpPreview(){
   ${pl.pkLedger.length?`<table class="v24-table" style="margin-top:10px"><thead><tr><th>خزنة الكوفير — المورد / البند</th><th>العدد</th><th>الإجمالي</th></tr></thead><tbody>${Object.entries(pl.pkLedger.reduce((o,a)=>{ (o[a.category]=o[a.category]||[0,0]); o[a.category][0]++; o[a.category][1]+=a.amount; return o; },{})).map(([k,v])=>`<tr><td>${v24Esc(k)}</td><td>${v[0]}</td><td>${pkF(v[1])}</td></tr>`).join('')}</tbody></table>`:''}
   ${Object.keys(byC).length?`<table class="v24-table" style="margin-top:10px"><thead><tr><th>العميل (فلوباك)</th><th>مبيعات</th><th>مقبوض</th><th>رصيد سابق</th></tr></thead><tbody>${Object.entries(byC).map(([k,v])=>`<tr><td>${v24Esc(k)}</td><td>${pkF(v[0])}</td><td>${pkF(v[1])}</td><td>${pkF(v[2])}</td></tr>`).join('')}</tbody></table>`:''}
   ${pl.dupT.length?`<div class="v24-warn" style="margin-top:10px"><b>مشتبه تكرارها</b> (نفس التاريخ والمبلغ موجودة بالفعل في الخزينة) — مش هتتضاف إلا لو علّمت الاختيار:<ul style="margin:6px 18px">${pl.dupT.slice(0,15).map(d=>`<li>${v24Esc(d.t.date)} — ${v24Esc(d.t.desc)} — ${pkF(d.t.amount)} (موجود: ${v24Esc(d.dup.desc||d.dup.category)})</li>`).join('')}</ul><label><input type="checkbox" id="imp-dups"> استورد المشتبه تكرارها كمان</label></div>`:''}
-  <div style="margin-top:12px"><button class="btn btn-primary" onclick="v24ImpApply()" ${pl.treasury.length+pl.pkAcct.length+pl.pkLedger.length+pl.pkItems.length+pl.dupT.length===0?'disabled':''}>✅ تنفيذ الاستيراد</button></div></div>`;
+  ${(()=>{ if(!(p.cash||[]).length) return ''; const sm=(a)=>a.reduce((t,x)=>t+(Number(x.amount)||0),0);
+    const lab={treasury:'خزينة الحقن',payment:'تحصيل عملاء الحقن',supplierPayment:'سندات موردين',pkLedger:'خزنة الكوفير',pkAcct:'حسابات عملاء فلوباك'};
+    const by={}; pl.cash.forEach(c=>{ const k=lab[c.target]+' — '+(c.dir==='in'?'وارد':'صادر'); (by[k]=by[k]||[0,0]); by[k][0]++; by[k][1]+=c.amount; });
+    const unr=[...new Set(pl.cash.filter(c=>c.unresolved).map(c=>c.unresolved))], newC=[...new Set(pl.cash.filter(c=>c.newCustomer).map(c=>c.customer))];
+    return `<div class="v24-card" style="margin-top:10px"><b>الحركات النقدية — هتتضاف: ${pl.cash.length} (وارد ${pkF(sm(pl.cash.filter(c=>c.dir==='in')))} / صادر ${pkF(sm(pl.cash.filter(c=>c.dir==='out')))})</b>
+    <div class="v24-kpis" style="margin-top:6px"><div class="v24-kpi"><div class="l">متطابقة وموجودة (اتخطت)</div><div class="v">${pl.cashDup.length}</div></div><div class="v24-kpi"><div class="l">قريبة (±3 أيام) — متوقفة</div><div class="v">${pl.cashNear.length}</div></div><div class="v24-kpi"><div class="l">اتستوردت قبل كده</div><div class="v">${pl.doneC}</div></div></div>
+    <table class="v24-table" style="margin-top:8px"><thead><tr><th>المكان</th><th>العدد</th><th>الإجمالي</th></tr></thead><tbody>${Object.entries(by).map(([k,v])=>`<tr><td>${v24Esc(k)}</td><td>${v[0]}</td><td>${pkF(v[1])}</td></tr>`).join('')}</tbody></table>
+    ${pl.cashDup.length?`<details style="margin-top:8px"><summary><b>اتخطت لأنها موجودة في البرنامج (${pl.cashDup.length})</b></summary><ul style="margin:6px 18px;font-size:12px">${pl.cashDup.map(d=>`<li>${v24Esc(d.c.date)} — ${v24Esc(d.c.desc)} — ${pkF(d.c.amount)} ← موجودة في: ${v24Esc(d.dup.src)}</li>`).join('')}</ul></details>`:''}
+    ${pl.cashNear.length?`<div class="v24-warn" style="margin-top:8px"><b>قريبة من حركة موجودة (نفس المبلغ والاتجاه، فرق أيام قليل)</b> — مش هتتضاف إلا لو علّمت الاختيار:<ul style="margin:6px 18px;font-size:12px">${pl.cashNear.map(d=>`<li>${v24Esc(d.c.date)} — ${v24Esc(d.c.desc)} — ${pkF(d.c.amount)} ↔ موجودة ${v24Esc(d.dup.date)} في ${v24Esc(d.dup.src)}</li>`).join('')}</ul><label><input type="checkbox" id="imp-near"> أضف القريبة كمان</label></div>`:''}
+    ${unr.length?`<div class="v24-warn" style="margin-top:8px">اتسجلت في الخزينة فقط (مش في حساب الطرف) لأن الطرف مش مسجل في البرنامج: ${unr.map(v24Esc).join('، ')}</div>`:''}
+    ${newC.length?`<div class="v24-warn" style="margin-top:8px">عملاء فلوباك جدد هيتفتحلهم حساب بالدفعات دي: ${newC.map(v24Esc).join('، ')}</div>`:''}</div>`; })()}
+  <div style="margin-top:12px"><button class="btn btn-primary" onclick="v24ImpApply()" ${pl.treasury.length+pl.pkAcct.length+pl.pkLedger.length+pl.pkItems.length+pl.dupT.length+pl.cash.length===0?'disabled':''}>✅ تنفيذ الاستيراد</button></div></div>`;
 }
 function v24ImpApply(){
   if(!currentUser||currentUser.role!=='admin'){ alert('الاستيراد للمدير فقط'); return; }
   const p=v24ImpPack; if(!p) return; const pl=v24ImpPlan(); const inc=!!(document.getElementById('imp-dups')||{}).checked;
-  const tAdd=[...pl.treasury,...(inc?pl.dupT.map(d=>d.t):[])]; const aAdd=pl.pkAcct, lAdd=pl.pkLedger, iAdd=pl.pkItems;
-  if(!tAdd.length&&!aAdd.length&&!lAdd.length&&!iAdd.length){ alert('مفيش حاجة جديدة للاستيراد'); return; }
-  if(!confirm(`هيتضاف ${tAdd.length} حركة خزينة الحقن و${aAdd.length} حركة حسابات فلوباك و${lAdd.length} حركة خزنة كوفير و${iAdd.length} صنف مخزن. متأكد؟`)) return;
+  const tAdd=[...pl.treasury,...(inc?pl.dupT.map(d=>d.t):[])]; const aAdd=pl.pkAcct, lAdd=pl.pkLedger, iAdd=pl.pkItems; const nearOn=!!(document.getElementById('imp-near')||{}).checked; const cAdd=[...pl.cash,...(nearOn?pl.cashNear.map(d=>d.c):[])];
+  if(!tAdd.length&&!aAdd.length&&!lAdd.length&&!iAdd.length&&!cAdd.length){ alert('مفيش حاجة جديدة للاستيراد'); return; }
+  if(!confirm(`هيتضاف ${tAdd.length} حركة خزينة الحقن و${aAdd.length} حركة حسابات فلوباك و${lAdd.length} حركة خزنة كوفير و${iAdd.length} صنف مخزن و${cAdd.length} حركة نقدية. متأكد؟`)) return;
+  cAdd.forEach(c=>v24ImpAddCash(c,p.batch));
   tAdd.forEach(t=>{ const r={...t}; delete r.costSrc; r.id=nextId.tre++; r.importBatch=p.batch; r.fromImport=true; treasury.push(r); });
   let aid=V24D.pkAcct.reduce((m,x)=>Math.max(m,x.id),0);
   aAdd.forEach(a=>V24D.pkAcct.push({...a,id:++aid,importBatch:p.batch,createdBy:v24Who()}));
@@ -9901,10 +9972,10 @@ function v24ImpApply(){
   let iid=V24D.pkItems.reduce((m,x)=>Math.max(m,x.id),0);
   iAdd.forEach(a=>V24D.pkItems.push({...a,id:++iid,importBatch:p.batch,createdBy:v24Who()}));
   if(iAdd.length) DB.save('pkItems',V24D.pkItems);
-  saveAll(); if(aAdd.length) DB.save('pkAcct',V24D.pkAcct); if(lAdd.length) DB.save('pkLedger',V24D.pkLedger);
-  const b=v24ImpBatches().filter(x=>x.id!==p.batch); b.push({id:p.batch,at:new Date().toISOString(),by:v24Who(),treasury:tAdd.length+(v24ImpBatches().find(x=>x.id===p.batch)||{treasury:0}).treasury,pkAcct:aAdd.length+(v24ImpBatches().find(x=>x.id===p.batch)||{pkAcct:0}).pkAcct,pkLedger:lAdd.length+((v24ImpBatches().find(x=>x.id===p.batch)||{}).pkLedger||0),pkItems:iAdd.length+((v24ImpBatches().find(x=>x.id===p.batch)||{}).pkItems||0)});
+  saveAll(); if(aAdd.length||cAdd.length) DB.save('pkAcct',V24D.pkAcct); if(lAdd.length||cAdd.length) DB.save('pkLedger',V24D.pkLedger);
+  const b=v24ImpBatches().filter(x=>x.id!==p.batch); b.push({id:p.batch,at:new Date().toISOString(),by:v24Who(),treasury:tAdd.length+(v24ImpBatches().find(x=>x.id===p.batch)||{treasury:0}).treasury,pkAcct:aAdd.length+(v24ImpBatches().find(x=>x.id===p.batch)||{pkAcct:0}).pkAcct,pkLedger:lAdd.length+((v24ImpBatches().find(x=>x.id===p.batch)||{}).pkLedger||0),pkItems:iAdd.length+((v24ImpBatches().find(x=>x.id===p.batch)||{}).pkItems||0),cash:cAdd.length+((v24ImpBatches().find(x=>x.id===p.batch)||{}).cash||0)});
   v24SetCfg('importBatches',b);
-  document.getElementById('imp-preview').innerHTML=`<div class="v24-card" style="background:#e6f4ea"><b>تم الاستيراد</b>: ${tAdd.length} حركة خزينة و${aAdd.length} حركة حسابات فلوباك و${lAdd.length} حركة خزنة كوفير و${iAdd.length} صنف مخزن.</div>`;
+  document.getElementById('imp-preview').innerHTML=`<div class="v24-card" style="background:#e6f4ea"><b>تم الاستيراد</b>: ${tAdd.length} حركة خزينة و${aAdd.length} حركة حسابات فلوباك و${lAdd.length} حركة خزنة كوفير و${iAdd.length} صنف مخزن و${cAdd.length} حركة نقدية.</div>`;
   v24ImpPack=null; v24RenderImport();
 }
 function v24ImpUndo(id){
@@ -9913,11 +9984,12 @@ function v24ImpUndo(id){
   V24.reason='إلغاء دفعة استيراد '+id;
   const delItems=new Set(V24D.pkItems.filter(a=>a.importBatch===id).map(a=>a.id)); if(V24D.pkStock.some(m=>delItems.has(m.itemId))){ alert('لا يمكن إلغاء الدفعة: بعض أصنافها عليها حركات مخزن. احذف الحركات الأول.'); V24.reason=''; return; }
   const t0=treasury.length, a0=V24D.pkAcct.length, l0=V24D.pkLedger.length, i0=V24D.pkItems.length;
+  const c0=payments.length+supplierPayments.length; payments=payments.filter(t=>t.importBatch!==id); supplierPayments=supplierPayments.filter(t=>t.importBatch!==id);
   treasury=treasury.filter(t=>t.importBatch!==id); V24D.pkAcct=V24D.pkAcct.filter(a=>a.importBatch!==id); V24D.pkLedger=V24D.pkLedger.filter(a=>a.importBatch!==id);
   V24D.pkItems=V24D.pkItems.filter(a=>a.importBatch!==id); DB.save('pkItems',V24D.pkItems);
   saveAll(); DB.save('pkAcct',V24D.pkAcct); DB.save('pkLedger',V24D.pkLedger); V24.reason='';
   v24SetCfg('importBatches',v24ImpBatches().filter(x=>x.id!==id));
-  alert(`اتشال ${t0-treasury.length} حركة خزينة و${a0-V24D.pkAcct.length} حركة فلوباك و${l0-V24D.pkLedger.length} حركة خزنة كوفير و${i0-V24D.pkItems.length} صنف`); v24RenderImport();
+  alert(`اتشال ${c0-payments.length-supplierPayments.length} تحصيل/سند و${t0-treasury.length} حركة خزينة و${a0-V24D.pkAcct.length} حركة فلوباك و${l0-V24D.pkLedger.length} حركة خزنة كوفير و${i0-V24D.pkItems.length} صنف`); v24RenderImport();
 }
 
 // ---------- فحص السحابة ورفع الناقص (للمدير) ----------
