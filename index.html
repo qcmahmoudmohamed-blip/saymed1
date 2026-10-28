@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 28-10 هـ • الصيانة من الخزينة تلقائي</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 28-10 و • الصيانة والكهرباء من الخزينة</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -8981,6 +8981,19 @@ function v24SyncMaint(){
     return r; };
   const sel=document.getElementById('wo-type-input'); if(sel&&![...sel.options].some(o=>o.text===V24_WO_TYPE)) sel.insertAdjacentHTML('beforeend','<option>'+V24_WO_TYPE+'</option>');
   setTimeout(()=>{ try{ if(v24SyncMaint()){ DB.save('workOrders',workOrders); if(v24MaintDirty.eq) DB.save('equipment',equipment); } }catch(e){} },3500);
+})();
+
+// ---------- ترقية حركات مستوردة قديمة: فاتورة الكهرباء 167,190 (23/6) بتتوزع من فبراير لـ يونيو ----------
+function v24FixElecSpread(){
+  let ch=false;
+  (treasury||[]).forEach(t=>{ if(t&&t.importKey==='jj:814'&&t.category===V24_ELEC_CAT&&!t.costFrom){ t.costFrom='2026-02'; t.costTo='2026-06'; ch=true; } });
+  return ch;
+}
+(function(){
+  const _sa2=saveAll; saveAll=function(){ try{ v24FixElecSpread(); }catch(e){} return _sa2.apply(this,arguments); };
+  const _ar2=applyRemoteData; let tm2=null;
+  applyRemoteData=function(key){ const r=_ar2.apply(this,arguments); if(key==='treasury'){ clearTimeout(tm2); tm2=setTimeout(()=>{ try{ if(v24FixElecSpread()) DB.save('treasury',treasury); }catch(e){} },900); } return r; };
+  setTimeout(()=>{ try{ if(v24FixElecSpread()) DB.save('treasury',treasury); }catch(e){} },3800);
 })();
 
 // ================= v24 — تشغيل: ناولون، نقطة تعادل، موثوقية، جرد، لوحة =================
