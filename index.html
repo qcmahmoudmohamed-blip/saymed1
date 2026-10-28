@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 27-10 • استيراد حركات يوليو–أكتوبر</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 28-10 • ملاك بأسمائهم وربط أسماء العملاء</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -8321,7 +8321,7 @@ const V24_PRESETS={
   admin:{label:'👑 مدير (كل الصلاحيات)',role:'admin',canDelete:true,pages:null},
   prod:{label:'🏭 مسئول الإنتاج والصيانة والفنيين',role:'editor',canDelete:false,pages:['dashboard','equipment','maintenance','parts','preventive','pm-annual','reliab','production','targets','reports','analytics','archive','technicians','inventory']},
   sales:{label:'🧾 مسئول المبيعات (حاسبة السعر فقط)',role:'editor',canDelete:false,pages:['pk-quote']},
-  acct:{label:'💼 مسئول الحسابات والتكاليف',role:'editor',canDelete:false,pages:['dashboard','sales','purchases','accounts','handling','hndan','inventory','costs','financials','treasury','supAccounts','cheques','custody','obligations','reconcile','breakeven','stocktake']}
+  acct:{label:'💼 مسئول الحسابات والتكاليف',role:'editor',canDelete:false,pages:['dashboard','sales','purchases','accounts','handling','hndan','inventory','costs','financials','treasury','supAccounts','cheques','custody','owners','obligations','reconcile','breakeven','stocktake']}
 };
 function v24RenderPageChecks(selected,all){
   const box=document.getElementById('user-groups-checks'); box.style.cssText='display:block;margin-bottom:14px';
@@ -8872,6 +8872,56 @@ PAGE_RENDERS.costs=renderCosts;
 };
 (function(){ const _ar=applyRemoteData; applyRemoteData=function(key,val){ const r=_ar.apply(this,arguments); if(key==='fixedCosts') v24EnsureCostLines(); return r; }; })();
 v24EnsureCostLines();
+PAGE_RENDERS.costs=renderCosts;
+
+// ---------- حسابات الملاك: سحب ودخل كل مالك من الخزنة ----------
+function v24OwnerLedger(year){
+  return getTreasuryLedger().filter(e=>e.isOwner&&(!year||(e.date||'').startsWith(year)));
+}
+function v24OwnerGroups(year){
+  const g={}, key=n=>v24Nz(n||'(بدون اسم)');
+  v24OwnerLedger(year).forEach(e=>{ const k=key(e.party); const o=g[k]||(g[k]={name:e.party||'(بدون اسم)',out:0,inn:0,n:0,names:{}}); o.names[e.party||'(بدون اسم)']=(o.names[e.party||'(بدون اسم)']||0)+1; if(e.type==='in') o.inn+=e.amount; else o.out+=e.amount; o.n++; });
+  Object.values(g).forEach(o=>{ o.name=Object.entries(o.names).sort((a,b)=>b[1]-a[1])[0][0]; });
+  return Object.entries(g).map(([k,o])=>({k,...o})).sort((a,b)=>b.out-a.out);
+}
+function v24RenderOwners(){
+  const sel=document.getElementById('own-year'); if(!sel) return;
+  if(!sel.options.length){ sel.innerHTML='<option value="">كل الفترات</option>'+v24Years().map(y=>`<option>${y}</option>`).join(''); sel.value=String(new Date().getFullYear()); if(sel.value!==String(new Date().getFullYear())) sel.value=''; }
+  const y=sel.value, G=v24OwnerGroups(y), sum=f=>G.reduce((t,o)=>t+o[f],0);
+  document.getElementById('own-kpis').innerHTML=`<div class="v24-kpi"><div class="l">إجمالي المسحوب</div><div class="v">${fmt(Math.round(sum('out')))}</div></div><div class="v24-kpi"><div class="l">إجمالي الداخل من الملاك</div><div class="v">${fmt(Math.round(sum('inn')))}</div></div><div class="v24-kpi"><div class="l">الصافي (داخل − مسحوب)</div><div class="v" style="color:${sum('inn')-sum('out')<0?'#a32d2d':'#0f6e56'}">${fmt(Math.round(sum('inn')-sum('out')))}</div></div>`;
+  document.getElementById('own-body').innerHTML=`<table class="v24-table"><thead><tr><th>المالك</th><th>سحب (خارج)</th><th>دخل (داخل)</th><th>الصافي</th><th>الحركات</th><th></th></tr></thead><tbody>${G.map(o=>`<tr><td><b>${v24Esc(o.name)}</b></td><td>${fmt(Math.round(o.out))}</td><td>${fmt(Math.round(o.inn))}</td><td style="font-weight:700;color:${o.inn-o.out<0?'#a32d2d':'#0f6e56'}">${fmt(Math.round(o.inn-o.out))}</td><td>${o.n}</td><td><button class="btn" style="padding:2px 8px;font-size:11px" onclick="v24OwnerDetail(decodeURIComponent('${encodeURIComponent(o.k)}'))">تفاصيل</button></td></tr>`).join('')||'<tr><td colspan="6" style="text-align:center;padding:30px;color:#888">لا توجد حركات ملاك. سجّلها من الخزينة ببند «سحب مالك / أرباح» أو «رأس مال / إيداع مالك» مع اسم المالك.</td></tr>'}</tbody></table><div id="own-detail" style="margin-top:14px"></div>`;
+}
+function v24OwnerDetail(k){
+  const y=v24v('own-year'); const L=v24OwnerLedger(y).filter(e=>v24Nz(e.party||'(بدون اسم)')===k).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  let run=0; const rows=L.map(e=>{ run+=(e.type==='in'?e.amount:-e.amount); return `<tr><td>${e.date}</td><td>${v24Esc(e.category)}</td><td>${v24Esc(e.desc||'')}</td><td>${e.type==='out'?fmt(Math.round(e.amount)):''}</td><td>${e.type==='in'?fmt(Math.round(e.amount)):''}</td><td>${fmt(Math.round(run))}</td></tr>`; }).join('');
+  document.getElementById('own-detail').innerHTML=`<h4 style="margin:6px 0">${v24Esc(L[0]?L[0].party:k)} — كشف الحركات</h4><table class="v24-table"><thead><tr><th>التاريخ</th><th>البند</th><th>البيان</th><th>سحب</th><th>دخل</th><th>الرصيد التراكمي</th></tr></thead><tbody>${rows}</tbody></table>`;
+  document.getElementById('own-detail').scrollIntoView({behavior:'smooth'});
+}
+
+// ---------- زكاة: بند لوحدها (خارج التكاليف وخارج حسابات الملاك) + الكهرباء بتتسحب تلقائيًا من الخزينة ----------
+(function(){ if(!TREASURY_CATEGORIES.out.includes('زكاة')) TREASURY_CATEGORIES.out.push('زكاة'); })();
+const V24_ELEC_CAT='كهرباء ومياه وغاز';
+function v24ElecSums(){
+  const s={};
+  (treasury||[]).forEach(t=>{ if(!t||t.type!=='out'||t.category!==V24_ELEC_CAT||!t.date) return;
+    // فاتورة مغطية أكتر من شهر (costFrom..costTo): بتتوزع بالتساوي على الشهور دي
+    let ms=[t.date.slice(0,7)]; if(t.costFrom){ ms=[]; let [y,m]=t.costFrom.split('-').map(Number); const [ye,me]=(t.costTo||t.costFrom).split('-').map(Number); while((y<ye||(y===ye&&m<=me))&&ms.length<60){ ms.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){m=1;y++;} } }
+    const share=(Number(t.amount)||0)/ms.length;
+    ms.forEach(k=>{ const y=k.slice(0,4), m=parseInt(k.slice(5,7),10)-1; if(m<0||m>11) return; s[y]=s[y]||{}; s[y][m]=(s[y][m]||0)+share; }); });
+  return s;
+}
+const _gevV24=getElecValue;
+getElecValue=function(year,month){
+  if(year){ const v=(v24ElecSums()[String(year)]||{})[MONTHS.indexOf(month)]; if(v!==undefined) return v; }
+  return _gevV24(year,month);
+};
+const _renderCostsV24b=renderCosts;
+renderCosts=function(){
+  const r=_renderCostsV24b.apply(this,arguments);
+  const y=(document.getElementById('variable-cost-year')||{}).value||'';
+  if(y){ const s=v24ElecSums()[y]||{}; MONTHS.forEach((m,i)=>{ const el=document.getElementById('vc-'+m+'-elec'); if(el&&s[i]!==undefined){ el.readOnly=true; el.style.background='#eef5e6'; el.title='محسوب تلقائيًا من حركات الخزينة (بند كهرباء ومياه وغاز)'; } }); }
+  return r;
+};
 PAGE_RENDERS.costs=renderCosts;
 
 // ================= v24 — تشغيل: ناولون، نقطة تعادل، موثوقية، جرد، لوحة =================
@@ -9888,20 +9938,35 @@ function v24ExistingCash(){
   V24D.pkAcct.forEach(t=>{ if(t.kind==='receipt'||t.kind==='sale_cash') add('حسابات فلوباك',t,'in',(t.customer||'')+' '+(t.note||'')); });
   return o;
 }
+// مطابقة الأسماء التقريبية: بتشيل الألقاب (الحاج/محمد...) و"ال" التعريف، وبتقبل لو الاسم نفسه أو جزء من الاسم التاني
+const V24_NAME_STOP=new Set(['حاج','الحاج','محمد','شركه','مطعم','مصنع','استاذ','المهندس','دكتور']);
+function v24Toks(s){ return v24Nz(s).split(' ').filter(Boolean).map(t=>t.length>3&&t.startsWith('ال')?t.slice(2):t).filter(t=>!V24_NAME_STOP.has(t)); }
+function v24NameFind(name,list){
+  const n=v24Nz(name); const exact=list.filter(x=>v24Nz(x)===n); if(exact.length===1) return {hit:exact[0]}; if(exact.length>1) return {amb:exact};
+  const T=v24Toks(name); if(!T.length) return {};
+  const sc=list.map(x=>{ const U=v24Toks(x); if(!U.length) return null; const same=T.length===U.length&&T.every(t=>U.includes(t)); const sub=T.every(t=>U.includes(t))||U.every(t=>T.includes(t)); return sub?{x,same}:null; }).filter(Boolean);
+  const same=sc.filter(z=>z.same); if(same.length===1) return {hit:same[0].x,fuzzy:true}; if(same.length>1) return {amb:same.map(z=>z.x)};
+  if(sc.length===1) return {hit:sc[0].x,fuzzy:true}; if(sc.length>1) return {amb:sc.map(z=>z.x)};
+  return {};
+}
 function v24ImpResolve(c){
-  // يحدد المخزن اللي هتنزل فيه الحركة بحسب الموجود فعلًا في البرنامج
+  // يحدد المخزن اللي هتنزل فيه الحركة بحسب الموجود فعلًا في البرنامج (بأسماء تقريبية)
   const r={...c};
   if(c.target==='payment'){
-    const n=v24Nz(c.client), hit=(clientsList||[]).filter(x=>v24Nz(x)===n);
-    if(hit.length===1) r.client=hit[0]; else { r.target='treasury'; Object.assign(r,c.fb,{subcategory:'',notes:(c.notes||'')+' — العميل مش مسجل في حسابات الحقن'}); r.unresolved='عميل حقن غير مسجل: '+c.client; }
+    const m=v24NameFind(c.client,clientsList||[]);
+    if(m.hit){ r.client=m.hit; if(m.fuzzy||m.hit!==c.client) r.matched=[c.client,m.hit]; }
+    else { r.target='treasury'; Object.assign(r,c.fb,{subcategory:'',notes:(c.notes||'')+' — العميل مش مسجل في حسابات الحقن'}); r.unresolved=(m.amb?'اسم العميل ينطبق على أكتر من عميل ('+m.amb.join(' / ')+'): ':'عميل حقن غير مسجل: ')+c.client; }
   } else if(c.target==='supplierPayment'){
-    const n=v24Nz(c.supplier), hit=(suppliersList||[]).filter(x=>v24Nz(x)===n);
-    if(hit.length===1) r.supplier=hit[0]; else { r.target='treasury'; Object.assign(r,c.fb,{subcategory:''}); r.unresolved='مورد غير مسجل: '+c.supplier; }
+    const m=v24NameFind(c.supplier,suppliersList||[]);
+    if(m.hit){ r.supplier=m.hit; if(m.fuzzy||m.hit!==c.supplier) r.matched=[c.supplier,m.hit]; }
+    else { r.target='treasury'; Object.assign(r,c.fb,{subcategory:''}); r.unresolved=(m.amb?'اسم المورد ينطبق على أكتر من مورد: ':'مورد غير مسجل: ')+c.supplier; }
   } else if(c.target==='pkAcct'){
-    const n=v24Nz(c.customer), names=[...new Set(V24D.pkAcct.map(x=>x.customer))];
-    const exact=names.filter(x=>v24Nz(x)===n);
-    if(exact.length) r.customer=exact[0];
-    else { const pre=names.filter(x=>v24Nz(x).startsWith(n+' ')||n.startsWith(v24Nz(x)+' ')); if(pre.length===1) r.customer=pre[0]; else r.newCustomer=true; }
+    const names=[...new Set(V24D.pkAcct.map(x=>x.customer))]; const m=v24NameFind(c.customer,names);
+    if(m.hit){ r.customer=m.hit; if(m.fuzzy||m.hit!==c.customer) r.matched=[c.customer,m.hit]; } else r.newCustomer=true;
+  } else if(c.target==='treasury'&&c.owner){
+    // اسم المالك بنفس كتابة الموجود قبل كده في الخزينة
+    const have=[...new Set(treasury.filter(t=>t.party&&['سحب مالك / أرباح','رأس مال / إيداع مالك'].includes(t.category)).map(t=>t.party))];
+    const m=v24NameFind(c.party,have); if(m.hit) r.party=m.hit;
   }
   return r;
 }
@@ -9925,6 +9990,7 @@ function v24ImpAddCash(c,batch){
   const note=c.notes||'';
   if(c.target==='treasury'){
     const r={...base,id:nextId.tre++,type:c.dir,category:c.category,subcategory:c.subcategory||'',party:c.party||'',desc:c.desc||'',method:'كاش',ref:'',notes:note};
+    if(c.costFrom){ r.costFrom=c.costFrom; r.costTo=c.costTo||c.costFrom; }
     if(c.contractor){ r.contractor=c.contractor; r.desc=(r.desc?r.desc+' — ':'')+c.contractor; }
     treasury.push(r);
   } else if(c.target==='payment') payments.push({...base,id:nextId.pay++,client:c.client,method:'كاش',ref:'',notes:(c.desc||'')+' — '+note});
@@ -9945,7 +10011,7 @@ function v24ImpPreview(){
   ${Object.keys(byC).length?`<table class="v24-table" style="margin-top:10px"><thead><tr><th>العميل (فلوباك)</th><th>مبيعات</th><th>مقبوض</th><th>رصيد سابق</th></tr></thead><tbody>${Object.entries(byC).map(([k,v])=>`<tr><td>${v24Esc(k)}</td><td>${pkF(v[0])}</td><td>${pkF(v[1])}</td><td>${pkF(v[2])}</td></tr>`).join('')}</tbody></table>`:''}
   ${pl.dupT.length?`<div class="v24-warn" style="margin-top:10px"><b>مشتبه تكرارها</b> (نفس التاريخ والمبلغ موجودة بالفعل في الخزينة) — مش هتتضاف إلا لو علّمت الاختيار:<ul style="margin:6px 18px">${pl.dupT.slice(0,15).map(d=>`<li>${v24Esc(d.t.date)} — ${v24Esc(d.t.desc)} — ${pkF(d.t.amount)} (موجود: ${v24Esc(d.dup.desc||d.dup.category)})</li>`).join('')}</ul><label><input type="checkbox" id="imp-dups"> استورد المشتبه تكرارها كمان</label></div>`:''}
   ${(()=>{ if(!(p.cash||[]).length) return ''; const sm=(a)=>a.reduce((t,x)=>t+(Number(x.amount)||0),0);
-    const lab={treasury:'خزينة الحقن',payment:'تحصيل عملاء الحقن',supplierPayment:'سندات موردين',pkLedger:'خزنة الكوفير',pkAcct:'حسابات عملاء فلوباك'};
+    const lab={treasury:'خزينة الحقن (الملاك بأسمائهم)',payment:'تحصيل عملاء الحقن',supplierPayment:'سندات موردين',pkLedger:'خزنة الكوفير',pkAcct:'حسابات عملاء فلوباك'};
     const by={}; pl.cash.forEach(c=>{ const k=lab[c.target]+' — '+(c.dir==='in'?'وارد':'صادر'); (by[k]=by[k]||[0,0]); by[k][0]++; by[k][1]+=c.amount; });
     const unr=[...new Set(pl.cash.filter(c=>c.unresolved).map(c=>c.unresolved))], newC=[...new Set(pl.cash.filter(c=>c.newCustomer).map(c=>c.customer))];
     return `<div class="v24-card" style="margin-top:10px"><b>الحركات النقدية — هتتضاف: ${pl.cash.length} (وارد ${pkF(sm(pl.cash.filter(c=>c.dir==='in')))} / صادر ${pkF(sm(pl.cash.filter(c=>c.dir==='out')))})</b>
@@ -9953,6 +10019,7 @@ function v24ImpPreview(){
     <table class="v24-table" style="margin-top:8px"><thead><tr><th>المكان</th><th>العدد</th><th>الإجمالي</th></tr></thead><tbody>${Object.entries(by).map(([k,v])=>`<tr><td>${v24Esc(k)}</td><td>${v[0]}</td><td>${pkF(v[1])}</td></tr>`).join('')}</tbody></table>
     ${pl.cashDup.length?`<details style="margin-top:8px"><summary><b>اتخطت لأنها موجودة في البرنامج (${pl.cashDup.length})</b></summary><ul style="margin:6px 18px;font-size:12px">${pl.cashDup.map(d=>`<li>${v24Esc(d.c.date)} — ${v24Esc(d.c.desc)} — ${pkF(d.c.amount)} ← موجودة في: ${v24Esc(d.dup.src)}</li>`).join('')}</ul></details>`:''}
     ${pl.cashNear.length?`<div class="v24-warn" style="margin-top:8px"><b>قريبة من حركة موجودة (نفس المبلغ والاتجاه، فرق أيام قليل)</b> — مش هتتضاف إلا لو علّمت الاختيار:<ul style="margin:6px 18px;font-size:12px">${pl.cashNear.map(d=>`<li>${v24Esc(d.c.date)} — ${v24Esc(d.c.desc)} — ${pkF(d.c.amount)} ↔ موجودة ${v24Esc(d.dup.date)} في ${v24Esc(d.dup.src)}</li>`).join('')}</ul><label><input type="checkbox" id="imp-near"> أضف القريبة كمان</label></div>`:''}
+    ${(()=>{ const mm=[...new Map(pl.cash.filter(c=>c.matched).map(c=>[c.matched.join('|'),c.matched])).values()]; return mm.length?`<div class="v24-card" style="margin-top:8px;background:#eef6ff"><b>أسماء اتربطت ببعض (الاسم في الشيت ← الاسم في البرنامج)</b><ul style="margin:6px 18px;font-size:12px">${mm.map(x=>`<li>${v24Esc(x[0])} ← ${v24Esc(x[1])}</li>`).join('')}</ul></div>`:''; })()}
     ${unr.length?`<div class="v24-warn" style="margin-top:8px">اتسجلت في الخزينة فقط (مش في حساب الطرف) لأن الطرف مش مسجل في البرنامج: ${unr.map(v24Esc).join('، ')}</div>`:''}
     ${newC.length?`<div class="v24-warn" style="margin-top:8px">عملاء فلوباك جدد هيتفتحلهم حساب بالدفعات دي: ${newC.map(v24Esc).join('، ')}</div>`:''}</div>`; })()}
   <div style="margin-top:12px"><button class="btn btn-primary" onclick="v24ImpApply()" ${pl.treasury.length+pl.pkAcct.length+pl.pkLedger.length+pl.pkItems.length+pl.dupT.length+pl.cash.length===0?'disabled':''}>✅ تنفيذ الاستيراد</button></div></div>`;
@@ -10234,6 +10301,7 @@ deleteUser=async function(id){
   v24AddPage('packaging','pk-analysis','📊 تحليل الأداء',pkRenderAnalysis,`<div class="p-content"><div style="margin-bottom:10px" id="pk-an-filter"></div><div class="v24-kpis" id="pk-an-kpis"></div><div id="pk-an-advice" style="margin-bottom:10px"></div><div id="pk-an-body"></div><div class="v24-card"><b>إعدادات الماكينة</b> <span style="font-size:11px;color:#888">(للمدير)</span><div class="form-row"><div class="form-group"><label>اسم الماكينة</label><input id="pk-name"></div><div class="form-group"><label>السرعة المعيارية (عبوة/دقيقة)</label><input id="pk-speed" type="number" min="1"></div><div class="form-group" style="display:flex;align-items:flex-end"><button class="btn" onclick="pkSaveCfg()">حفظ</button></div></div></div></div>`);
   v24AddPage('finance','cheques','🧾 الشيكات',v24RenderCheques,`<div class="p-content"><div class="v24-kpis" id="chq-kpis"></div><div class="filter-bar" style="margin-bottom:10px;display:flex;gap:8px">${sel('chq-st','<option value="">كل الحالات</option>'+V24_CHEQUE_ST.map(x=>`<option>${x}</option>`).join(''),'v24RenderCheques')}${sel('chq-tp','<option value="">وارد وصادر</option><option value="in">وارد</option><option value="out">صادر</option>','v24RenderCheques')}</div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="chq-body"></div></div></div>`);
   v24AddPage('finance','custody','👛 العُهد',v24RenderCustody,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">الصرف للشخص بيتسجل من الخزينة بند «عهدة (صرف لشخص)». هنا بتسجّل مصروفاته بالإيصالات، والباقي نقدًا بيرجع بند «تسوية / رد عهدة».</p><div class="v24-kpis" id="cus-kpis"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="cus-body"></div></div></div>`);
+  v24AddPage('finance','owners','👤 حسابات الملاك',v24RenderOwners,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">كل مالك: كام سحب وكام دخّل في الخزنة. المصدر بنود الخزينة «سحب مالك / أرباح» و«رأس مال / إيداع مالك» وغيرها من بنود الملاك، بحسب اسم المالك.</p><div style="margin-bottom:10px"><select id="own-year" onchange="v24RenderOwners()" style="padding:6px 10px"></select></div><div class="v24-kpis" id="own-kpis"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="own-body"></div></div></div>`);
   v24AddPage('finance','obligations','📆 الالتزامات الدورية',v24RenderObligations,`<div class="p-content"><div style="margin-bottom:10px"><button class="btn btn-primary v24-write" onclick="v24EditObligation()">➕ التزام جديد</button></div><div id="obl-alert"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="obl-body"></div></div></div>`);
   v24AddPage('finance','reconcile','🔍 مطابقة الكشوف',()=>{ if(!document.getElementById('rec-party').options.length) v24RecParties(); },`<div class="p-content"><div class="v24-card"><div class="form-row"><div class="form-group"><label>النوع</label><select id="rec-kind" onchange="v24RecParties()"><option value="client">عميل (دفعاته)</option><option value="supplier">مورد (سداداتنا له)</option></select></div><div class="form-group"><label>الطرف</label><select id="rec-party"></select></div></div>
   <div class="form-row"><div class="form-group"><label>من تاريخ (اختياري)</label><input type="date" id="rec-from"></div><div class="form-group"><label>إلى تاريخ (اختياري)</label><input type="date" id="rec-to"></div></div>
