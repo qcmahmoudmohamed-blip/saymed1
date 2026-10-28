@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 28-10 و • الصيانة والكهرباء من الخزينة</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 28-10 ط • حذف الصفوف المكررة</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -8847,8 +8847,17 @@ function v24CostLineSums(){
     s[line]=s[line]||{}; s[line][y]=s[line][y]||{}; s[line][y][m]=(s[line][y][m]||0)+(Number(t.amount)||0); });
   return s;
 }
+// صفوف مكررة بشرطة سفلية (مصاريف_إدارية / مواد_تشغيل_وزيوت...) من نسخ قديمة: البنود التلقائية بتتشال، والباقي بيتسمى بمسافات
+function v24NormalizeCostKeys(){
+  if(typeof fixedCosts!=='object'||!fixedCosts) return false; let ch=false;
+  Object.keys(fixedCosts).forEach(k=>{ if(!k.includes('_')) return; const t=k.replace(/_/g,' ');
+    if(V24_COST_LINES.includes(t)){ delete fixedCosts[k]; ch=true; }
+    else if(!Object.prototype.hasOwnProperty.call(fixedCosts,t)){ fixedCosts[t]=fixedCosts[k]; delete fixedCosts[k]; ch=true; } });
+  return ch;
+}
 function v24EnsureCostLines(){
   if(typeof fixedCosts!=='object'||!fixedCosts) return;
+  if(v24NormalizeCostKeys()){ try{ DB.save('fixedCosts',fixedCosts); }catch(e){} }
   V24_COST_LINES.forEach(l=>{ if(!fixedCosts[l]){ fixedCosts[l]={}; MONTHS.forEach(m=>fixedCosts[l][m]=0); } });
 }
 const _gfcV24=getFixedCostValue;
@@ -8866,7 +8875,7 @@ PAGE_RENDERS.costs=renderCosts;
   const r=_renderCostsV24.apply(this,arguments);
   const y=(document.getElementById('fixed-cost-year')||{}).value||'';
   if(y){ const sums=v24CostLineSums();
-    V24_COST_LINES.forEach(l=>MONTHS.forEach((m,i)=>{ const v=((sums[l]||{})[y]||{})[i]; const el=document.getElementById('fc-'+l.replace(/ /g,'_')+'-'+m); if(v!==undefined&&el){ el.readOnly=true; el.style.background='#eef5e6'; el.title='محسوب تلقائيًا من حركات الخزينة'; } }));
+    V24_COST_LINES.forEach(l=>MONTHS.forEach((m,i)=>{ const v=((sums[l]||{})[y]||{})[i]; const el=document.getElementById('fc-'+l.replace(/ /g,'_')+'-'+m); if(v!==undefined&&el){ el.readOnly=false; const ov=v24Cfg('costOverride',{})[l+'|'+y+'|'+i]!==undefined; el.style.background=ov?'#fff3cd':'#eef5e6'; el.title=ov?'قيمة معدّلة يدويًا (بدل الخزينة)':'محسوب تلقائيًا من الخزينة — تقدر تعدله'; } }));
     const body=document.getElementById('fixed-costs-body'); if(body&&!document.getElementById('v24-costlink-note')) body.insertAdjacentHTML('afterbegin','<div id="v24-costlink-note" class="v24-warn" style="background:#eef5e6;border-color:#c5dcb0">الخانات الخضراء محسوبة تلقائيًا من حركات الخزينة (مواد التشغيل والزيوت، المغسلة، الكلارك، المصاريف الإدارية، البوفيه). الشهور اللي مفيهاش حركات بتفضل بالقيمة اليدوية.</div>'); }
   return r;
 };
@@ -8903,11 +8912,7 @@ function v24OwnerDetail(k){
 const V24_ELEC_CAT='كهرباء ومياه وغاز';
 function v24ElecSums(){
   const s={};
-  (treasury||[]).forEach(t=>{ if(!t||t.type!=='out'||t.category!==V24_ELEC_CAT||!t.date) return;
-    // فاتورة مغطية أكتر من شهر (costFrom..costTo): بتتوزع بالتساوي على الشهور دي
-    let ms=[t.date.slice(0,7)]; if(t.costFrom){ ms=[]; let [y,m]=t.costFrom.split('-').map(Number); const [ye,me]=(t.costTo||t.costFrom).split('-').map(Number); while((y<ye||(y===ye&&m<=me))&&ms.length<60){ ms.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){m=1;y++;} } }
-    const share=(Number(t.amount)||0)/ms.length;
-    ms.forEach(k=>{ const y=k.slice(0,4), m=parseInt(k.slice(5,7),10)-1; if(m<0||m>11) return; s[y]=s[y]||{}; s[y][m]=(s[y][m]||0)+share; }); });
+  (treasury||[]).forEach(t=>{ if(!t||t.type!=='out'||t.category!==V24_ELEC_CAT||!t.date) return; const y=t.date.slice(0,4), m=parseInt(t.date.slice(5,7),10)-1; if(m<0||m>11) return; s[y]=s[y]||{}; s[y][m]=(s[y][m]||0)+(Number(t.amount)||0); });
   return s;
 }
 const _gevV24=getElecValue;
@@ -8923,8 +8928,8 @@ renderCosts=function(){
     let ch=false; ['fixed-cost-year','variable-cost-year'].forEach(id=>{ const el=document.getElementById(id); if(el&&!el.value){ if(![...el.options].some(o=>o.value===Y)){ const o=document.createElement('option'); o.value=Y; o.textContent='سنة '+Y; el.appendChild(o); } el.value=Y; ch=true; } });
     if(ch) return renderCosts(); }
   const y=(document.getElementById('variable-cost-year')||{}).value||'';
-  if(y){ const s=v24ElecSums()[y]||{}; let any=false; MONTHS.forEach((m,i)=>{ const el=document.getElementById('vc-'+m+'-elec'); if(el&&s[i]!==undefined){ any=true; el.readOnly=true; el.style.background='#eef5e6'; el.title='محسوب تلقائيًا من حركات الخزينة (بند كهرباء ومياه وغاز)'; } });
-    const body=document.getElementById('variable-costs-body'); if(any&&body&&!document.getElementById('v24-elec-note')) body.insertAdjacentHTML('afterbegin','<div id="v24-elec-note" class="v24-warn" style="background:#eef5e6;border-color:#c5dcb0">الخانات الخضراء محسوبة تلقائيًا من حركات الخزينة (بند كهرباء ومياه وغاز). الشهر اللي مفيهوش حركة بيفضل على القيمة اليدوية.</div>'); }
+  if(y){ const s=v24ElecSums()[y]||{}; let any=false; MONTHS.forEach((m,i)=>{ const el=document.getElementById('vc-'+m+'-elec'); if(el&&s[i]!==undefined){ any=true; el.readOnly=false; const ov=v24Cfg('costOverride',{})['elec|'+y+'|'+i]!==undefined; el.style.background=ov?'#fff3cd':'#eef5e6'; el.title=ov?'قيمة معدّلة يدويًا (بدل الخزينة)':'محسوب تلقائيًا من الخزينة — تقدر تعدله'; } });
+    const body=document.getElementById('variable-costs-body'); if(any&&body&&!document.getElementById('v24-elec-note')) body.insertAdjacentHTML('afterbegin','<div id="v24-elec-note" class="v24-warn" style="background:#eef5e6;border-color:#c5dcb0">الخانات الخضراء محسوبة تلقائيًا من حركات الخزينة (بند كهرباء ومياه وغاز) وتقدر تعدلها (بتتلون أصفر). <button class="btn" style="padding:2px 8px;font-size:11px" onclick="v24CostResetOv()">↩️ رجوع للتلقائي</button></div>'); }
   return r;
 };
 PAGE_RENDERS.costs=renderCosts;
@@ -8983,18 +8988,39 @@ function v24SyncMaint(){
   setTimeout(()=>{ try{ if(v24SyncMaint()){ DB.save('workOrders',workOrders); if(v24MaintDirty.eq) DB.save('equipment',equipment); } }catch(e){} },3500);
 })();
 
-// ---------- ترقية حركات مستوردة قديمة: فاتورة الكهرباء 167,190 (23/6) بتتوزع من فبراير لـ يونيو ----------
-function v24FixElecSpread(){
-  let ch=false;
-  (treasury||[]).forEach(t=>{ if(t&&t.importKey==='jj:814'&&t.category===V24_ELEC_CAT&&!t.costFrom){ t.costFrom='2026-02'; t.costTo='2026-06'; ch=true; } });
-  return ch;
-}
+
+// ---------- تعديل يدوي لأي خانة تلقائية (بيتحفظ فوق قيمة الخزينة) + رجوع للتلقائي ----------
 (function(){
-  const _sa2=saveAll; saveAll=function(){ try{ v24FixElecSpread(); }catch(e){} return _sa2.apply(this,arguments); };
-  const _ar2=applyRemoteData; let tm2=null;
-  applyRemoteData=function(key){ const r=_ar2.apply(this,arguments); if(key==='treasury'){ clearTimeout(tm2); tm2=setTimeout(()=>{ try{ if(v24FixElecSpread()) DB.save('treasury',treasury); }catch(e){} },900); } return r; };
-  setTimeout(()=>{ try{ if(v24FixElecSpread()) DB.save('treasury',treasury); }catch(e){} },3800);
+  const _g=getFixedCostValue; getFixedCostValue=function(item,year,month){
+    if(year&&V24_COST_LINES.includes(item)){ const ov=v24Cfg('costOverride',{})[item+'|'+year+'|'+MONTHS.indexOf(month)]; if(ov!==undefined) return Number(ov)||0; }
+    // البنود دي بتيجي من الخزينة بس: الشهر اللي مفيهوش حركة = صفر (مش القيمة اليدوية القديمة)
+    if(year&&V24_COST_LINES.includes(item)){ const v=((v24CostLineSums()[item]||{})[String(year)]||{})[MONTHS.indexOf(month)]; return v===undefined?0:v; }
+    return _g(item,year,month); };
+  const _e=getElecValue; getElecValue=function(year,month){
+    if(year){ const ov=v24Cfg('costOverride',{})['elec|'+year+'|'+MONTHS.indexOf(month)]; if(ov!==undefined) return Number(ov)||0; }
+    return _e(year,month); };
+  const _sf=saveFixedCosts; saveFixedCosts=function(){
+    const y=(document.getElementById('fixed-cost-year')||{}).value||''; const cap={};
+    if(y) V24_COST_LINES.forEach(l=>MONTHS.forEach((m,i)=>{ const el=document.getElementById('fc-'+l.replace(/ /g,'_')+'-'+m); if(el) cap[l+'|'+y+'|'+i]=Number(el.value)||0; }));
+    const r=_sf.apply(this,arguments);
+    if(y){ const sums=v24CostLineSums(), ov={...v24Cfg('costOverride',{})};
+      Object.entries(cap).forEach(([k,v])=>{ const [l,yy,i]=k.split('|'); const auto=((sums[l]||{})[yy]||{})[i]; if(auto!==undefined){ if(Math.abs(v-auto)>0.5) ov[k]=v; else delete ov[k]; } });
+      v24SetCfg('costOverride',ov); }
+    return r; };
+  const _sv=saveVariableCosts; saveVariableCosts=function(){
+    const y=(document.getElementById('variable-cost-year')||{}).value||''; const cap={};
+    if(y) MONTHS.forEach((m,i)=>{ const el=document.getElementById('vc-'+m+'-elec'); if(el) cap['elec|'+y+'|'+i]=Number(el.value)||0; });
+    const r=_sv.apply(this,arguments);
+    if(y){ const s=v24ElecSums()[y]||{}, ov={...v24Cfg('costOverride',{})};
+      Object.entries(cap).forEach(([k,v])=>{ const i=Number(k.split('|')[2]); const auto=s[i]; if(auto!==undefined){ if(Math.abs(v-auto)>0.5) ov[k]=v; else delete ov[k]; } });
+      v24SetCfg('costOverride',ov); }
+    return r; };
 })();
+function v24CostResetOv(){
+  const y=(document.getElementById('variable-cost-year')||document.getElementById('fixed-cost-year')||{}).value||'';
+  if(!confirm('هترجع كل الخانات المعدّلة يدويًا لسنة '+(y||'')+' للقيم التلقائية من الخزينة. متأكد؟')) return;
+  const ov={...v24Cfg('costOverride',{})}; Object.keys(ov).forEach(k=>{ if(k.split('|')[1]===y) delete ov[k]; }); v24SetCfg('costOverride',ov); renderCosts();
+}
 
 // ================= v24 — تشغيل: ناولون، نقطة تعادل، موثوقية، جرد، لوحة =================
 const v24Sum=(a,f)=>a.reduce((s,x)=>s+(f(x)||0),0);
