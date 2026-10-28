@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 28-10 ج • ملاك بأسمائهم + استبدال الدفعات</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 28-10 هـ • الصيانة من الخزينة تلقائي</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -8918,11 +8918,70 @@ getElecValue=function(year,month){
 const _renderCostsV24b=renderCosts;
 renderCosts=function(){
   const r=_renderCostsV24b.apply(this,arguments);
+  // أول فتح للصفحة: اختار سنة الحالية بدل "الافتراضي" عشان الأرقام التلقائية من الخزينة تظهر على طول
+  if(!window._v24CostInit){ window._v24CostInit=true; const Y=String(new Date().getFullYear());
+    let ch=false; ['fixed-cost-year','variable-cost-year'].forEach(id=>{ const el=document.getElementById(id); if(el&&!el.value){ if(![...el.options].some(o=>o.value===Y)){ const o=document.createElement('option'); o.value=Y; o.textContent='سنة '+Y; el.appendChild(o); } el.value=Y; ch=true; } });
+    if(ch) return renderCosts(); }
   const y=(document.getElementById('variable-cost-year')||{}).value||'';
-  if(y){ const s=v24ElecSums()[y]||{}; MONTHS.forEach((m,i)=>{ const el=document.getElementById('vc-'+m+'-elec'); if(el&&s[i]!==undefined){ el.readOnly=true; el.style.background='#eef5e6'; el.title='محسوب تلقائيًا من حركات الخزينة (بند كهرباء ومياه وغاز)'; } }); }
+  if(y){ const s=v24ElecSums()[y]||{}; let any=false; MONTHS.forEach((m,i)=>{ const el=document.getElementById('vc-'+m+'-elec'); if(el&&s[i]!==undefined){ any=true; el.readOnly=true; el.style.background='#eef5e6'; el.title='محسوب تلقائيًا من حركات الخزينة (بند كهرباء ومياه وغاز)'; } });
+    const body=document.getElementById('variable-costs-body'); if(any&&body&&!document.getElementById('v24-elec-note')) body.insertAdjacentHTML('afterbegin','<div id="v24-elec-note" class="v24-warn" style="background:#eef5e6;border-color:#c5dcb0">الخانات الخضراء محسوبة تلقائيًا من حركات الخزينة (بند كهرباء ومياه وغاز). الشهر اللي مفيهوش حركة بيفضل على القيمة اليدوية.</div>'); }
   return r;
 };
 PAGE_RENDERS.costs=renderCosts;
+
+// ---------- مصروفات الصيانة من الخزينة بتدخل أوامر الصيانة تلقائيًا بفلوسها ----------
+const V24_MAINT_CAT='صيانة', V24_WO_TYPE='من الخزينة';
+function v24GuessEquip(text){
+  const t=v24Nz(text||''), by=n=>(equipment||[]).find(e=>e.name===n||e.model===n);
+  const rules=[[/mir|مير|675/i,'MIR 675'],[/fcs|اف سي|450/i,'FCS 450'],[/كسار/,'كسارة'],[/شيلر/,'شيلر'],[/كولينج|برج تبريد/,'كولينج تاور'],[/موتور/,'موتور'],[/حقلي|حقلى/,'أسطمبة حقلي'],[/فرش ?18/,'فرش 18'],[/فرش ?12/,'فرش 12'],[/فرش ?22/,'فرش 22'],[/جامبو/,'جامبو 27']];
+  for(const [re,n] of rules){ if(re.test(t)){ const e=(equipment||[]).find(x=>(x.name+' '+(x.model||'')).includes(n)); if(e) return e.id; } }
+  return null;
+}
+function v24GeneralEquipId(){
+  let e=(equipment||[]).find(x=>x.code==='GEN-01');
+  if(!e){ e={id:nextId.eq++,code:'GEN-01',name:'صيانة عامة (من الخزينة)',cat:'صيانة عامة',model:'—',location:'—',status:'تعمل'}; equipment.push(e); v24MaintDirty.eq=true; }
+  return e.id;
+}
+const v24MaintDirty={wo:false,eq:false};
+function v24SyncMaint(){
+  if(typeof treasury==='undefined'||typeof workOrders==='undefined'||typeof equipment==='undefined') return false;
+  v24MaintDirty.wo=false; v24MaintDirty.eq=false;
+  const locked=d=>{ try{ return typeof isMonthLocked==='function'&&isMonthLocked(d); }catch(e){ return false; } };
+  const tre=treasury.filter(t=>t&&t.type==='out'&&t.category===V24_MAINT_CAT&&t.date&&Number(t.amount)>0);
+  const byT=new Map(workOrders.filter(w=>w.treasuryId!==undefined&&w.fromTreasury).map(w=>[w.treasuryId,w]));
+  const manual=workOrders.filter(w=>!w.fromTreasury&&w.status!=='ملغى');
+  tre.forEach(t=>{
+    const desc=((t.desc||'')+(t.subcategory?' — '+t.subcategory:'')).trim()||'صيانة';
+    const amt=Number(t.amount)||0, w=byT.get(t.id);
+    if(w){
+      if(w.status==='ملغى') return;
+      if(locked(w.date)||locked(t.date)) return;
+      if(w.date!==t.date||w.totalCost!==amt||w.desc!==desc){ w.date=t.date; w.laborCost=amt; w.partsCost=0; w.totalCost=amt; w.desc=desc; v24MaintDirty.wo=true; }
+      return;
+    }
+    if(locked(t.date)) return;
+    // لو فيه أمر صيانة يدوي بنفس التاريخ والمبلغ يبقى متسجل قبل كده: ما نكررهوش
+    if(manual.some(m=>m.date===t.date&&Math.abs((m.totalCost||0)-amt)<0.005)) return;
+    const equipId=v24GuessEquip(desc)||v24GeneralEquipId();
+    const o={id:nextId.wo++,no:genWONo(),date:t.date,equipId,type:V24_WO_TYPE,tech:'',hours:0,laborCost:amt,desc,parts:[],partsCost:0,totalCost:amt,status:'تم التنفيذ',notes:'اتسجل تلقائيًا من حركة الخزينة رقم '+t.id+(t.importBatch?' (استيراد)':''),fromTreasury:true,treasuryId:t.id};
+    // genWONo بتعتمد على nextId.wo اللي اتزودت: نحسب الرقم من القيمة قبل الزيادة
+    o.no='WO-'+String(o.id).padStart(4,'0'); workOrders.push(o); v24MaintDirty.wo=true;
+  });
+  // حركة الخزينة اتمسحت أو اتغير بندها: شيل الأمر المرتبط بيها (لو لسه تلقائي)
+  const live=new Set(tre.map(t=>t.id)); const before=workOrders.length;
+  workOrders=workOrders.filter(w=>!(w.fromTreasury&&w.treasuryId!==undefined&&!live.has(w.treasuryId)&&!locked(w.date)));
+  if(workOrders.length!==before) v24MaintDirty.wo=true;
+  return v24MaintDirty.wo||v24MaintDirty.eq;
+}
+(function(){
+  const _sa=saveAll; saveAll=function(){ try{ v24SyncMaint(); }catch(e){ console.warn('maint sync',e); } return _sa.apply(this,arguments); };
+  const _ar=applyRemoteData; let tm=null;
+  applyRemoteData=function(key){ const r=_ar.apply(this,arguments);
+    if(key==='treasury'||key==='workOrders'||key==='equipment'){ clearTimeout(tm); tm=setTimeout(()=>{ try{ if(v24SyncMaint()){ DB.save('workOrders',workOrders); if(v24MaintDirty.eq) DB.save('equipment',equipment); } }catch(e){} },800); }
+    return r; };
+  const sel=document.getElementById('wo-type-input'); if(sel&&![...sel.options].some(o=>o.text===V24_WO_TYPE)) sel.insertAdjacentHTML('beforeend','<option>'+V24_WO_TYPE+'</option>');
+  setTimeout(()=>{ try{ if(v24SyncMaint()){ DB.save('workOrders',workOrders); if(v24MaintDirty.eq) DB.save('equipment',equipment); } }catch(e){} },3500);
+})();
 
 // ================= v24 — تشغيل: ناولون، نقطة تعادل، موثوقية، جرد، لوحة =================
 const v24Sum=(a,f)=>a.reduce((s,x)=>s+(f(x)||0),0);
