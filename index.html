@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 28-10 • ملاك بأسمائهم وربط أسماء العملاء</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 28-10 ج • ملاك بأسمائهم + استبدال الدفعات</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -9896,7 +9896,14 @@ function pkQuoteList(){
 // ================= v24.3 — استيراد حزم البيانات (للمدير فقط) =================
 // حزمة JSON: {version,batch,treasury:[...],pkAcct:[...]} — كل سجل له importKey فمفيش تكرار لو اتستورد تاني، وكل دفعة تتلغي بالكامل.
 let v24ImpPack=null;
-function v24ImpBatches(){ return v24Cfg('importBatches',[]); }
+function v24ImpBatchesRaw(){ return v24Cfg('importBatches',[]); }
+// الدفعات المسجلة + أي دفعة موجودة حركاتها في البيانات حتى لو سجلها ضاع (بتتعرض بحيث تقدر تتلغى)
+function v24ImpBatches(){
+  const cfg=v24ImpBatchesRaw().slice(), have=new Set(cfg.map(b=>b.id)), g={};
+  const add=(arr,k)=>(arr||[]).forEach(r=>{ if(r&&r.importBatch&&!have.has(r.importBatch)){ const b=g[r.importBatch]||(g[r.importBatch]={id:r.importBatch,at:'',by:'(من السجلات)',treasury:0,pkAcct:0,pkLedger:0,pkItems:0,cash:0}); b[k]++; } });
+  add(treasury,'treasury'); add(payments,'cash'); add(supplierPayments,'cash'); add(V24D.pkAcct,'pkAcct'); add(V24D.pkLedger,'pkLedger'); add(V24D.pkItems,'pkItems');
+  return cfg.concat(Object.values(g));
+}
 function v24RenderImport(){
   const el=document.getElementById('imp-batches'); if(!el) return;
   const b=v24ImpBatches();
@@ -10016,7 +10023,7 @@ function v24ImpPreview(){
     const unr=[...new Set(pl.cash.filter(c=>c.unresolved).map(c=>c.unresolved))], newC=[...new Set(pl.cash.filter(c=>c.newCustomer).map(c=>c.customer))];
     return `<div class="v24-card" style="margin-top:10px"><b>الحركات النقدية — هتتضاف: ${pl.cash.length} (وارد ${pkF(sm(pl.cash.filter(c=>c.dir==='in')))} / صادر ${pkF(sm(pl.cash.filter(c=>c.dir==='out')))})</b>
     <div class="v24-kpis" style="margin-top:6px"><div class="v24-kpi"><div class="l">متطابقة وموجودة (اتخطت)</div><div class="v">${pl.cashDup.length}</div></div><div class="v24-kpi"><div class="l">قريبة (±3 أيام) — متوقفة</div><div class="v">${pl.cashNear.length}</div></div><div class="v24-kpi"><div class="l">اتستوردت قبل كده</div><div class="v">${pl.doneC}</div></div></div>
-    ${pl.doneC>0&&v24ImpBatches().some(b=>b.id===p.batch)?`<div class="v24-warn" style="margin-top:8px"><b>الدفعة دي اتستوردت قبل كده (${pl.doneC} حركة)</b>، فمش هتتضاف تاني. لو الملف ده نسخة أحدث (تصنيف أو أسماء متعدلة) استخدم الزرار ده: بيشيل الدفعة القديمة وبيستورد الجديدة بدالها.<br><button class="btn btn-primary" style="margin-top:6px" onclick="v24ImpReplace()">🔄 استبدال الدفعة القديمة بالجديدة</button></div>`:''}
+    ${pl.doneC>0?`<div class="v24-warn" style="margin-top:8px"><b>الدفعة دي اتستوردت قبل كده (${pl.doneC} حركة)</b>، فمش هتتضاف تاني. لو الملف ده نسخة أحدث (تصنيف أو أسماء متعدلة) استخدم الزرار ده: بيشيل الدفعة القديمة وبيستورد الجديدة بدالها.<br><button class="btn btn-primary" style="margin-top:6px" onclick="v24ImpReplace()">🔄 استبدال الدفعة القديمة بالجديدة</button></div>`:''}
     <table class="v24-table" style="margin-top:8px"><thead><tr><th>المكان</th><th>العدد</th><th>الإجمالي</th></tr></thead><tbody>${Object.entries(by).map(([k,v])=>`<tr><td>${v24Esc(k)}</td><td>${v[0]}</td><td>${pkF(v[1])}</td></tr>`).join('')}</tbody></table>
     ${pl.cashDup.length?`<details style="margin-top:8px"><summary><b>اتخطت لأنها موجودة في البرنامج (${pl.cashDup.length})</b></summary><ul style="margin:6px 18px;font-size:12px">${pl.cashDup.map(d=>`<li>${v24Esc(d.c.date)} — ${v24Esc(d.c.desc)} — ${pkF(d.c.amount)} ← موجودة في: ${v24Esc(d.dup.src)}</li>`).join('')}</ul></details>`:''}
     ${pl.cashNear.length?`<div class="v24-warn" style="margin-top:8px"><b>قريبة من حركة موجودة (نفس المبلغ والاتجاه، فرق أيام قليل)</b> — مش هتتضاف إلا لو علّمت الاختيار:<ul style="margin:6px 18px;font-size:12px">${pl.cashNear.map(d=>`<li>${v24Esc(d.c.date)} — ${v24Esc(d.c.desc)} — ${pkF(d.c.amount)} ↔ موجودة ${v24Esc(d.dup.date)} في ${v24Esc(d.dup.src)}</li>`).join('')}</ul><label><input type="checkbox" id="imp-near"> أضف القريبة كمان</label></div>`:''}
@@ -10041,7 +10048,7 @@ function v24ImpApply(){
   iAdd.forEach(a=>V24D.pkItems.push({...a,id:++iid,importBatch:p.batch,createdBy:v24Who()}));
   if(iAdd.length) DB.save('pkItems',V24D.pkItems);
   saveAll(); if(aAdd.length||cAdd.length) DB.save('pkAcct',V24D.pkAcct); if(lAdd.length||cAdd.length) DB.save('pkLedger',V24D.pkLedger);
-  const b=v24ImpBatches().filter(x=>x.id!==p.batch); b.push({id:p.batch,at:new Date().toISOString(),by:v24Who(),treasury:tAdd.length+(v24ImpBatches().find(x=>x.id===p.batch)||{treasury:0}).treasury,pkAcct:aAdd.length+(v24ImpBatches().find(x=>x.id===p.batch)||{pkAcct:0}).pkAcct,pkLedger:lAdd.length+((v24ImpBatches().find(x=>x.id===p.batch)||{}).pkLedger||0),pkItems:iAdd.length+((v24ImpBatches().find(x=>x.id===p.batch)||{}).pkItems||0),cash:cAdd.length+((v24ImpBatches().find(x=>x.id===p.batch)||{}).cash||0)});
+  const b=v24ImpBatchesRaw().filter(x=>x.id!==p.batch); b.push({id:p.batch,at:new Date().toISOString(),by:v24Who(),treasury:tAdd.length+(v24ImpBatchesRaw().find(x=>x.id===p.batch)||{treasury:0}).treasury,pkAcct:aAdd.length+(v24ImpBatchesRaw().find(x=>x.id===p.batch)||{pkAcct:0}).pkAcct,pkLedger:lAdd.length+((v24ImpBatchesRaw().find(x=>x.id===p.batch)||{}).pkLedger||0),pkItems:iAdd.length+((v24ImpBatchesRaw().find(x=>x.id===p.batch)||{}).pkItems||0),cash:cAdd.length+((v24ImpBatchesRaw().find(x=>x.id===p.batch)||{}).cash||0)});
   v24SetCfg('importBatches',b);
   document.getElementById('imp-preview').innerHTML=`<div class="v24-card" style="background:#e6f4ea"><b>تم الاستيراد</b>: ${tAdd.length} حركة خزينة و${aAdd.length} حركة حسابات فلوباك و${lAdd.length} حركة خزنة كوفير و${iAdd.length} صنف مخزن و${cAdd.length} حركة نقدية.</div>`;
   v24ImpPack=null; v24RenderImport();
@@ -10050,7 +10057,9 @@ function v24ImpReplace(){
   if(!currentUser||currentUser.role!=='admin'){ alert('للمدير فقط'); return; }
   const p=v24ImpPack; if(!p) return;
   if(!confirm('هيتشال كل اللي اتستورد قبل كده من الدفعة دي (أي تعديل يدوي عليها هيضيع) وبعدين يتستورد الملف الجديد بدالها. متأكد؟')) return;
-  if(!v24ImpUndo(p.batch,true)) return;
+  const keys=new Set((p.cash||[]).map(c=>c.key)); const ids=new Set([p.batch]);
+  [treasury,payments,supplierPayments,V24D.pkAcct,V24D.pkLedger].forEach(arr=>arr.forEach(r=>{ if(r.importKey&&keys.has(r.importKey)&&r.importBatch) ids.add(r.importBatch); }));
+  for(const id of ids){ if(!v24ImpUndo(id,true)) return; }
   v24ImpPack=p; v24ImpPreview();
   const pl=v24ImpPlan(); if(pl.cash.length+pl.treasury.length+pl.pkAcct.length+pl.pkLedger.length+pl.pkItems.length===0){ alert('مفيش حاجة جديدة للاستيراد'); return; }
   v24ImpApply();
@@ -10065,7 +10074,7 @@ function v24ImpUndo(id,silent){
   treasury=treasury.filter(t=>t.importBatch!==id); V24D.pkAcct=V24D.pkAcct.filter(a=>a.importBatch!==id); V24D.pkLedger=V24D.pkLedger.filter(a=>a.importBatch!==id);
   V24D.pkItems=V24D.pkItems.filter(a=>a.importBatch!==id); DB.save('pkItems',V24D.pkItems);
   saveAll(); DB.save('pkAcct',V24D.pkAcct); DB.save('pkLedger',V24D.pkLedger); V24.reason='';
-  v24SetCfg('importBatches',v24ImpBatches().filter(x=>x.id!==id));
+  v24SetCfg('importBatches',v24ImpBatchesRaw().filter(x=>x.id!==id));
   if(!silent) alert(`اتشال ${c0-payments.length-supplierPayments.length} تحصيل/سند و${t0-treasury.length} حركة خزينة و${a0-V24D.pkAcct.length} حركة فلوباك و${l0-V24D.pkLedger.length} حركة خزنة كوفير و${i0-V24D.pkItems.length} صنف`); v24RenderImport();
   return true;
 }
