@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 28-10 ط • حذف الصفوف المكررة</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 29-10 • أرصدة 2025 وطنطاوي (٢)</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -8321,7 +8321,7 @@ const V24_PRESETS={
   admin:{label:'👑 مدير (كل الصلاحيات)',role:'admin',canDelete:true,pages:null},
   prod:{label:'🏭 مسئول الإنتاج والصيانة والفنيين',role:'editor',canDelete:false,pages:['dashboard','equipment','maintenance','parts','preventive','pm-annual','reliab','production','targets','reports','analytics','archive','technicians','inventory']},
   sales:{label:'🧾 مسئول المبيعات (حاسبة السعر فقط)',role:'editor',canDelete:false,pages:['pk-quote']},
-  acct:{label:'💼 مسئول الحسابات والتكاليف',role:'editor',canDelete:false,pages:['dashboard','sales','purchases','accounts','handling','hndan','inventory','costs','financials','treasury','supAccounts','cheques','custody','owners','obligations','reconcile','breakeven','stocktake']}
+  acct:{label:'💼 مسئول الحسابات والتكاليف',role:'editor',canDelete:false,pages:['dashboard','sales','purchases','accounts','handling','hndan','inventory','costs','financials','treasury','supAccounts','cheques','custody','owners','openbal','obligations','reconcile','breakeven','stocktake']}
 };
 function v24RenderPageChecks(selected,all){
   const box=document.getElementById('user-groups-checks'); box.style.cssText='display:block;margin-bottom:14px';
@@ -8891,18 +8891,23 @@ function v24OwnerGroups(year){
   const g={}, key=n=>v24Nz(n||'(بدون اسم)');
   v24OwnerLedger(year).forEach(e=>{ const k=key(e.party); const o=g[k]||(g[k]={name:e.party||'(بدون اسم)',out:0,inn:0,n:0,names:{}}); o.names[e.party||'(بدون اسم)']=(o.names[e.party||'(بدون اسم)']||0)+1; if(e.type==='in') o.inn+=e.amount; else o.out+=e.amount; o.n++; });
   Object.values(g).forEach(o=>{ o.name=Object.entries(o.names).sort((a,b)=>b[1]-a[1])[0][0]; });
+  // رصيد افتتاحي منقول من 2025 لكل مالك (لما الفلتر "كل الفترات" أو أي سنة بعد 2025)
+  const openOn=!year||year>'2025';
+  Object.keys((typeof v24OBmap==='function'?v24OBmap('owner'):{})).forEach(nm=>{ const k=key(nm); if(!g[k]) g[k]={name:nm,out:0,inn:0,n:0,names:{}}; });
+  Object.entries(g).forEach(([k,o])=>{ o.open=openOn&&typeof v24OB==='function'?v24OB('owner',o.name):0; });
   return Object.entries(g).map(([k,o])=>({k,...o})).sort((a,b)=>b.out-a.out);
 }
 function v24RenderOwners(){
   const sel=document.getElementById('own-year'); if(!sel) return;
   if(!sel.options.length){ sel.innerHTML='<option value="">كل الفترات</option>'+v24Years().map(y=>`<option>${y}</option>`).join(''); sel.value=String(new Date().getFullYear()); if(sel.value!==String(new Date().getFullYear())) sel.value=''; }
   const y=sel.value, G=v24OwnerGroups(y), sum=f=>G.reduce((t,o)=>t+o[f],0);
-  document.getElementById('own-kpis').innerHTML=`<div class="v24-kpi"><div class="l">إجمالي المسحوب</div><div class="v">${fmt(Math.round(sum('out')))}</div></div><div class="v24-kpi"><div class="l">إجمالي الداخل من الملاك</div><div class="v">${fmt(Math.round(sum('inn')))}</div></div><div class="v24-kpi"><div class="l">الصافي (داخل − مسحوب)</div><div class="v" style="color:${sum('inn')-sum('out')<0?'#a32d2d':'#0f6e56'}">${fmt(Math.round(sum('inn')-sum('out')))}</div></div>`;
-  document.getElementById('own-body').innerHTML=`<table class="v24-table"><thead><tr><th>المالك</th><th>سحب (خارج)</th><th>دخل (داخل)</th><th>الصافي</th><th>الحركات</th><th></th></tr></thead><tbody>${G.map(o=>`<tr><td><b>${v24Esc(o.name)}</b></td><td>${fmt(Math.round(o.out))}</td><td>${fmt(Math.round(o.inn))}</td><td style="font-weight:700;color:${o.inn-o.out<0?'#a32d2d':'#0f6e56'}">${fmt(Math.round(o.inn-o.out))}</td><td>${o.n}</td><td><button class="btn" style="padding:2px 8px;font-size:11px" onclick="v24OwnerDetail(decodeURIComponent('${encodeURIComponent(o.k)}'))">تفاصيل</button></td></tr>`).join('')||'<tr><td colspan="6" style="text-align:center;padding:30px;color:#888">لا توجد حركات ملاك. سجّلها من الخزينة ببند «سحب مالك / أرباح» أو «رأس مال / إيداع مالك» مع اسم المالك.</td></tr>'}</tbody></table><div id="own-detail" style="margin-top:14px"></div>`;
+  document.getElementById('own-kpis').innerHTML=`<div class="v24-kpi"><div class="l">إجمالي المسحوب</div><div class="v">${fmt(Math.round(sum('out')))}</div></div><div class="v24-kpi"><div class="l">إجمالي الداخل من الملاك</div><div class="v">${fmt(Math.round(sum('inn')))}</div></div><div class="v24-kpi"><div class="l">أرصدة افتتاحية 2025</div><div class="v">${fmt(Math.round(sum('open')))}</div></div><div class="v24-kpi"><div class="l">الصافي (افتتاحي + داخل − مسحوب)</div><div class="v" style="color:${sum('open')+sum('inn')-sum('out')<0?'#a32d2d':'#0f6e56'}">${fmt(Math.round(sum('open')+sum('inn')-sum('out')))}</div></div>`;
+  document.getElementById('own-body').innerHTML=`<table class="v24-table"><thead><tr><th>المالك</th><th>رصيد افتتاحي 2025</th><th>سحب (خارج)</th><th>دخل (داخل)</th><th>الصافي (له / عليه)</th><th>الحركات</th><th></th></tr></thead><tbody>${G.map(o=>`<tr><td><b>${v24Esc(o.name)}</b></td><td>${o.open?fmt(Math.round(o.open)):'—'}</td><td>${fmt(Math.round(o.out))}</td><td>${fmt(Math.round(o.inn))}</td><td style="font-weight:700;color:${o.open+o.inn-o.out<0?'#a32d2d':'#0f6e56'}">${fmt(Math.round(o.open+o.inn-o.out))}</td><td>${o.n}</td><td><button class="btn" style="padding:2px 8px;font-size:11px" onclick="v24OwnerDetail(decodeURIComponent('${encodeURIComponent(o.k)}'))">تفاصيل</button></td></tr>`).join('')||'<tr><td colspan="7" style="text-align:center;padding:30px;color:#888">لا توجد حركات ملاك. سجّلها من الخزينة ببند «سحب مالك / أرباح» أو «رأس مال / إيداع مالك» مع اسم المالك.</td></tr>'}</tbody></table><div id="own-detail" style="margin-top:14px"></div>`;
 }
 function v24OwnerDetail(k){
   const y=v24v('own-year'); const L=v24OwnerLedger(y).filter(e=>v24Nz(e.party||'(بدون اسم)')===k).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  let run=0; const rows=L.map(e=>{ run+=(e.type==='in'?e.amount:-e.amount); return `<tr><td>${e.date}</td><td>${v24Esc(e.category)}</td><td>${v24Esc(e.desc||'')}</td><td>${e.type==='out'?fmt(Math.round(e.amount)):''}</td><td>${e.type==='in'?fmt(Math.round(e.amount)):''}</td><td>${fmt(Math.round(run))}</td></tr>`; }).join('');
+  const ob=(!y||y>'2025')&&typeof v24OB==='function'?v24OB('owner',L[0]?L[0].party:k):0;
+  let run=ob; const rows=(ob?`<tr style="background:#f6f6f2"><td>2025-12-31</td><td colspan="2"><b>${V24_OPEN_LABEL}</b></td><td></td><td></td><td>${fmt(Math.round(ob))}</td></tr>`:'')+L.map(e=>{ run+=(e.type==='in'?e.amount:-e.amount); return `<tr><td>${e.date}</td><td>${v24Esc(e.category)}</td><td>${v24Esc(e.desc||'')}</td><td>${e.type==='out'?fmt(Math.round(e.amount)):''}</td><td>${e.type==='in'?fmt(Math.round(e.amount)):''}</td><td>${fmt(Math.round(run))}</td></tr>`; }).join('');
   document.getElementById('own-detail').innerHTML=`<h4 style="margin:6px 0">${v24Esc(L[0]?L[0].party:k)} — كشف الحركات</h4><table class="v24-table"><thead><tr><th>التاريخ</th><th>البند</th><th>البيان</th><th>سحب</th><th>دخل</th><th>الرصيد التراكمي</th></tr></thead><tbody>${rows}</tbody></table>`;
   document.getElementById('own-detail').scrollIntoView({behavior:'smooth'});
 }
@@ -10064,6 +10069,7 @@ function v24ImpResolve(c){
   } else if(c.target==='supplierPayment'){
     const m=v24NameFind(c.supplier,suppliersList||[]);
     if(m.hit){ r.supplier=m.hit; if(m.fuzzy||m.hit!==c.supplier) r.matched=[c.supplier,m.hit]; }
+    else if(c.createSupplier&&!m.amb){ r.newSupplier=true; }
     else { r.target='treasury'; Object.assign(r,c.fb,{subcategory:''}); r.unresolved=(m.amb?'اسم المورد ينطبق على أكتر من مورد: ':'مورد غير مسجل: ')+c.supplier; }
   } else if(c.target==='pkAcct'){
     const names=[...new Set(V24D.pkAcct.map(x=>x.customer))]; const m=v24NameFind(c.customer,names);
@@ -10099,7 +10105,7 @@ function v24ImpAddCash(c,batch){
     if(c.contractor){ r.contractor=c.contractor; r.desc=(r.desc?r.desc+' — ':'')+c.contractor; }
     treasury.push(r);
   } else if(c.target==='payment') payments.push({...base,id:nextId.pay++,client:c.client,method:'كاش',ref:'',notes:(c.desc||'')+' — '+note});
-  else if(c.target==='supplierPayment') supplierPayments.push({...base,id:nextId.supPay++,supplier:c.supplier,method:'كاش',ref:'',notes:(c.desc||'')+' — '+note});
+  else if(c.target==='supplierPayment'){ if(c.newSupplier&&!suppliersList.some(x=>v24Nz(x)===v24Nz(c.supplier))) suppliersList.push(c.supplier); supplierPayments.push({...base,id:nextId.supPay++,supplier:c.supplier,method:'كاش',ref:'',notes:(c.desc||'')+' — '+note}); }
   else if(c.target==='pkLedger') V24D.pkLedger.push({...base,id:V24D.pkLedger.reduce((m,x)=>Math.max(m,x.id),0)+1,kind:c.kind,category:c.category,desc:c.desc||c.category,ref:'',createdBy:v24Who()});
   else if(c.target==='pkAcct') V24D.pkAcct.push({...base,id:V24D.pkAcct.reduce((m,x)=>Math.max(m,x.id),0)+1,customer:c.customer,kind:'receipt',ref:'',note:(c.desc||'')+' — حركة خزنة',createdBy:v24Who()});
 }
@@ -10127,6 +10133,7 @@ function v24ImpPreview(){
     ${pl.cashNear.length?`<div class="v24-warn" style="margin-top:8px"><b>قريبة من حركة موجودة (نفس المبلغ والاتجاه، فرق أيام قليل)</b> — مش هتتضاف إلا لو علّمت الاختيار:<ul style="margin:6px 18px;font-size:12px">${pl.cashNear.map(d=>`<li>${v24Esc(d.c.date)} — ${v24Esc(d.c.desc)} — ${pkF(d.c.amount)} ↔ موجودة ${v24Esc(d.dup.date)} في ${v24Esc(d.dup.src)}</li>`).join('')}</ul><label><input type="checkbox" id="imp-near"> أضف القريبة كمان</label></div>`:''}
     ${(()=>{ const mm=[...new Map(pl.cash.filter(c=>c.matched).map(c=>[c.matched.join('|'),c.matched])).values()]; return mm.length?`<div class="v24-card" style="margin-top:8px;background:#eef6ff"><b>أسماء اتربطت ببعض (الاسم في الشيت ← الاسم في البرنامج)</b><ul style="margin:6px 18px;font-size:12px">${mm.map(x=>`<li>${v24Esc(x[0])} ← ${v24Esc(x[1])}</li>`).join('')}</ul></div>`:''; })()}
     ${unr.length?`<div class="v24-warn" style="margin-top:8px">اتسجلت في الخزينة فقط (مش في حساب الطرف) لأن الطرف مش مسجل في البرنامج: ${unr.map(v24Esc).join('، ')}</div>`:''}
+    ${(()=>{ const ns=[...new Set(pl.cash.filter(c=>c.newSupplier).map(c=>c.supplier))]; return ns.length?`<div class="v24-warn" style="margin-top:8px">موردين جدد هيتضافوا لقايمة الموردين وسنداتهم هتدخل كشف حسابهم: ${ns.map(v24Esc).join('، ')}</div>`:''; })()}
     ${newC.length?`<div class="v24-warn" style="margin-top:8px">عملاء فلوباك جدد هيتفتحلهم حساب بالدفعات دي: ${newC.map(v24Esc).join('، ')}</div>`:''}</div>`; })()}
   <div style="margin-top:12px"><button class="btn btn-primary" onclick="v24ImpApply()" ${pl.treasury.length+pl.pkAcct.length+pl.pkLedger.length+pl.pkItems.length+pl.dupT.length+pl.cash.length===0?'disabled':''}>✅ تنفيذ الاستيراد</button></div></div>`;
 }
@@ -10218,6 +10225,98 @@ async function v24CloudPushAll(){
   if(!confirm('رفع كل الأقسام الناقصة للسحابة؟')) return;
   for(const r of (window.v24CloudRows||[])) if(r.st==='missing'||r.st==='partial'){ try{ await v24CloudPush(r.key,true); }catch(e){ alert('تعذر رفع '+r.key+': '+(e.code||e.message)); } }
   v24CloudCheck();
+}
+
+/* ===== رصيد افتتاحي منقول من 2025 (عملاء / موردين / ملاك) + سندات الموردين من الخزينة + مخرز أسود ← خالد طنطاوي ===== */
+const V24_OPEN_LABEL='رصيد افتتاحي منقول من 2025';
+const V24_OB_SUGGEST=[
+  {kind:'client',name:'الهبه',amount:543320.5,note:'من كشف الهبة في شيتك: الرصيد 543,320.5 (عليه) في 31/12/2025'},
+  {kind:'owner',name:'محمود يوسف',amount:384000,note:'من شيت محمود يوسف: "رصيد اول" 384,000 له (فيه كمان بنود 2025: نسبة إدارة 28,000 وتنقلات 24,000 مش محسوبين)'},
+  {kind:'owner',name:'احمد يوسف',amount:374000,note:'من شيت احمد يوسف: "رصيد اول" 374,000 له'}
+];
+function v24OBmap(kind){ return (v24Cfg('openBal',{})[kind])||{}; }
+function v24OB(kind,name){ const m=v24OBmap(kind), n=v24Nz(name); for(const k in m){ if(v24Nz(k)===n) return Number(m[k])||0; } return 0; }
+function v24ObEntry(kind,name){ const a=v24OB(kind,name); if(!a) return null;
+  return {date:'2025-12-31',type:'رصيد افتتاحي',ref:'—',desc:V24_OPEN_LABEL,debit:a>0?a:0,credit:a<0?-a:0,raw:{},opening:true}; }
+function v24Resort(L){ L.sort((a,b)=>(a.date||'').localeCompare(b.date||'')||((a.opening?0:1)-(b.opening?0:1))); let run=0; L.forEach(e=>{ run+=(e.debit||0)-(e.credit||0); e.running=run; }); return L; }
+// سندات دفع الموردين المسجلة في الخزينة باسم المورد (لما المورد ماكانش مسجل وقت الاستيراد)
+function v24TreSupPays(name){
+  return (treasury||[]).filter(t=>t&&t.type==='out'&&t.category==='سند دفع لمورد'&&t.date&&t.party&&Number(t.amount)>0&&(v24Nz(t.party)===v24Nz(name)||v24NameFind(t.party,[name]).hit===name));
+}
+(function(){
+  const _gcl=getClientLedger; getClientLedger=function(name,year){
+    if(year) return _gcl(name,year);
+    const L=_gcl(name,''); const o=v24ObEntry('client',name); if(o) L.push(o); return v24Resort(L); };
+  const _gsl=getSupplierLedger; getSupplierLedger=function(name,year){
+    if(year) return _gsl(name,year);
+    const L=_gsl(name,''); const o=v24ObEntry('supplier',name); if(o) L.push(o);
+    v24TreSupPays(name).forEach(t=>L.push({date:t.date,type:'سند دفع (خزينة)',ref:'خزينة '+t.id,desc:(t.desc||'نقدًا'),debit:0,credit:Number(t.amount)||0,raw:t}));
+    return v24Resort(L); };
+  const _gcb=getClientBalance; getClientBalance=function(name){
+    const r=_gcb(name), o=v24OB('client',name); r.opening=o;
+    if(o>0) r.totalSales+=o; else if(o<0) r.totalPaid+=-o; r.balance=r.totalSales-r.totalPaid; return r; };
+  const _gsb=getSupplierBalance; getSupplierBalance=function(name){
+    const r=_gsb(name), o=v24OB('supplier',name); r.opening=o;
+    const tp=v24TreSupPays(name).reduce((s,t)=>s+(Number(t.amount)||0),0); r.totalPaid+=tp;
+    if(o>0) r.totalPurchases+=o; else if(o<0) r.totalPaid+=-o; r.balance=r.totalPurchases-r.totalPaid-r.totalReturns; return r; };
+  // سطر صغير تحت الاسم في جدول الحسابات: منها افتتاحي 2025
+  const note=(tableId,kind)=>{ const t=document.getElementById(tableId); if(!t) return; t.querySelectorAll('tbody tr').forEach(tr=>{ const st=tr.querySelector('td strong'); if(!st) return; const o=v24OB(kind,st.textContent.trim()); if(o){ const td=st.parentElement; if(!td.querySelector('.v24-ob')) td.insertAdjacentHTML('beforeend','<div class="v24-ob" style="font-size:10px;color:#888">منها '+V24_OPEN_LABEL+': '+fmt(Math.abs(Math.round(o)))+' '+(o>0?'(مدين)':'(دائن)')+'</div>'); } }); };
+  const _ra=renderAccounts; renderAccounts=function(){ const r=_ra.apply(this,arguments); try{ note('acc-clients-table','client'); }catch(e){} return r; };
+  { const _rs=renderSupplierAccounts; renderSupplierAccounts=function(){ const r=_rs.apply(this,arguments); try{ note('sup-suppliers-table','supplier'); }catch(e){} return r; }; }
+})();
+
+// ---------- مخرز أسود من غير مورد بعد 2/7 = خالد طنطاوي ----------
+function v24TantawiName(){ const all=getAllSuppliers(); const m=v24NameFind('خالد طنطاوي',all); return m.hit||'خالد طنطاوي'; }
+function v24FixPurchSuppliers(){
+  let ch=false; const T=v24TantawiName();
+  (purchases||[]).forEach(p=>{ if(!p||(p.supplier&&String(p.supplier).trim())||!p.date||!(p.date>='2026-07-02')) return;
+    if(!v24Nz([p.desc,p.cat,p.matLink].join(' ')).includes('مخرز اسود')) return;
+    p.supplier=T; p.autoSupplier=true; ch=true; });
+  if(ch&&!suppliersList.some(x=>v24Nz(x)===v24Nz(T))) suppliersList.push(T);
+  return ch;
+}
+(function(){
+  const _sa=saveAll; saveAll=function(){ try{ v24FixPurchSuppliers(); }catch(e){ console.warn('purch fix',e); } return _sa.apply(this,arguments); };
+  const _ar=applyRemoteData; let tm=null;
+  applyRemoteData=function(key){ const r=_ar.apply(this,arguments);
+    if(key==='purchases'){ clearTimeout(tm); tm=setTimeout(()=>{ try{ if(v24FixPurchSuppliers()){ DB.save('purchases',purchases); DB.save('suppliersList',suppliersList); } }catch(e){} },900); }
+    return r; };
+  setTimeout(()=>{ try{ if(v24FixPurchSuppliers()){ DB.save('purchases',purchases); DB.save('suppliersList',suppliersList); } }catch(e){} },4200);
+})();
+
+// ---------- صفحة الأرصدة الافتتاحية ----------
+function v24ObNames(kind){
+  if(kind==='client') return getAllClients();
+  if(kind==='supplier') return getAllSuppliers();
+  const s=new Set(v24OwnerGroups('').map(o=>o.name)); Object.keys(v24OBmap('owner')).forEach(k=>s.add(k)); return [...s].sort();
+}
+function v24ObTable(kind,title,hint){
+  const names=v24ObNames(kind);
+  return `<div class="card" style="margin-bottom:14px"><div class="card-body" style="padding:12px"><h4 style="margin:0 0 4px">${title}</h4><div style="font-size:12px;color:#666;margin-bottom:8px">${hint}</div>
+  <table class="v24-table"><thead><tr><th>الاسم</th><th style="width:170px">الرصيد في 31/12/2025</th></tr></thead><tbody>${names.map(n=>`<tr><td>${v24Esc(n)}</td><td><input type="number" step="0.01" data-ob="${kind}" data-name="${encodeURIComponent(n)}" value="${v24OB(kind,n)||''}" style="width:150px;padding:4px 6px"></td></tr>`).join('')||'<tr><td colspan="2" style="color:#888;padding:14px;text-align:center">لا توجد أسماء بعد</td></tr>'}</tbody></table>
+  ${kind==='owner'?`<div style="margin-top:8px;display:flex;gap:6px"><input id="ob-newowner" placeholder="اسم مالك جديد" style="padding:5px 8px"><button class="btn" onclick="v24ObAddOwner()">➕ إضافة مالك</button></div>`:''}</div></div>`;
+}
+function v24RenderOpenBal(){
+  const el=document.getElementById('ob-body'); if(!el) return;
+  const sug=V24_OB_SUGGEST.map(x=>{ const names=v24ObNames(x.kind); const m=v24NameFind(x.name,names); const nm=m.hit||x.name; const cur=v24OB(x.kind,nm);
+    return `<li><b>${v24Esc(nm)}</b> (${x.kind==='client'?'عميل':'مالك'}): ${fmt(x.amount)} — ${v24Esc(x.note)} ${cur?'<span style="color:#0f6e56">✔ مسجل '+fmt(cur)+'</span>':''}</li>`; }).join('');
+  el.innerHTML=`<div class="v24-warn" style="background:#eef6ff;border-color:#bcd6f5"><b>اقتراحات من شيتك</b> (مش متطبقة تلقائيًا — راجعها وبعدين اضغط تطبيق):<ul style="margin:6px 18px;font-size:12px">${sug}</ul>
+   <button class="btn btn-primary" onclick="v24ObApplySuggest()">✅ تطبيق الاقتراحات</button> <span style="font-size:11px;color:#888">تأكد إن البرنامج مفيهوش فواتير سنة 2025 لنفس العملاء قبل ما تطبق، عشان ماتتحسبش مرتين.</span></div>
+  ${v24ObTable('client','👥 العملاء (حقن)','موجب = العميل عليه فلوس (مدين)، سالب = له عندنا')}
+  ${v24ObTable('supplier','🏭 الموردين','موجب = مستحق للمورد، سالب = له رصيد عندنا')}
+  ${v24ObTable('owner','👤 الملاك','موجب = للمالك عند الشركة (له)، سالب = عليه للشركة')}
+  <button class="btn btn-primary" onclick="v24ObSave()">💾 حفظ الأرصدة</button> <span style="font-size:12px;color:#666">بتظهر في كشوف الحسابات باسم «${V24_OPEN_LABEL}»، وبتدخل في أرصدة العملاء والموردين والملاك. عملاء فلوباك ليهم رصيد سابق مسجل في صفحة حساباتهم.</span>`;
+}
+function v24ObSave(){
+  const o={client:{},supplier:{},owner:{}};
+  document.querySelectorAll('#ob-body input[data-ob]').forEach(i=>{ const v=parseFloat(i.value); if(v) o[i.dataset.ob][decodeURIComponent(i.dataset.name)]=v; });
+  v24SetCfg('openBal',o); alert('اتحفظت الأرصدة الافتتاحية'); v24RenderOpenBal();
+}
+function v24ObAddOwner(){ const n=(document.getElementById('ob-newowner').value||'').trim(); if(!n) return; const o=JSON.parse(JSON.stringify(v24Cfg('openBal',{client:{},supplier:{},owner:{}}))); o.owner=o.owner||{}; if(!(n in o.owner)) o.owner[n]=0.000001; v24SetCfg('openBal',o); v24RenderOpenBal(); }
+function v24ObApplySuggest(){
+  const o=JSON.parse(JSON.stringify(v24Cfg('openBal',{}))); o.client=o.client||{}; o.supplier=o.supplier||{}; o.owner=o.owner||{};
+  V24_OB_SUGGEST.forEach(x=>{ const names=v24ObNames(x.kind); const m=v24NameFind(x.name,names); const nm=m.hit||x.name; o[x.kind][nm]=x.amount; });
+  v24SetCfg('openBal',o); v24RenderOpenBal(); alert('اتطبقت الاقتراحات. راجع الأرقام واضغط حفظ لو عدلت حاجة.');
 }
 
 // ================= v24.2 — Firebase Authentication (Email/Password) + قائمة مصرّح لهم =================
@@ -10420,6 +10519,7 @@ deleteUser=async function(id){
   v24AddPage('finance','cheques','🧾 الشيكات',v24RenderCheques,`<div class="p-content"><div class="v24-kpis" id="chq-kpis"></div><div class="filter-bar" style="margin-bottom:10px;display:flex;gap:8px">${sel('chq-st','<option value="">كل الحالات</option>'+V24_CHEQUE_ST.map(x=>`<option>${x}</option>`).join(''),'v24RenderCheques')}${sel('chq-tp','<option value="">وارد وصادر</option><option value="in">وارد</option><option value="out">صادر</option>','v24RenderCheques')}</div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="chq-body"></div></div></div>`);
   v24AddPage('finance','custody','👛 العُهد',v24RenderCustody,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">الصرف للشخص بيتسجل من الخزينة بند «عهدة (صرف لشخص)». هنا بتسجّل مصروفاته بالإيصالات، والباقي نقدًا بيرجع بند «تسوية / رد عهدة».</p><div class="v24-kpis" id="cus-kpis"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="cus-body"></div></div></div>`);
   v24AddPage('finance','owners','👤 حسابات الملاك',v24RenderOwners,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">كل مالك: كام سحب وكام دخّل في الخزنة. المصدر بنود الخزينة «سحب مالك / أرباح» و«رأس مال / إيداع مالك» وغيرها من بنود الملاك، بحسب اسم المالك.</p><div style="margin-bottom:10px"><select id="own-year" onchange="v24RenderOwners()" style="padding:6px 10px"></select></div><div class="v24-kpis" id="own-kpis"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="own-body"></div></div></div>`);
+  v24AddPage('finance','openbal','📌 أرصدة افتتاحية 2025',v24RenderOpenBal,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">سجّل رصيد كل عميل ومورد ومالك منقول من سنة 2025. بيظهر في كشف الحساب باسم «رصيد افتتاحي منقول من 2025».</p><div id="ob-body"></div></div>`);
   v24AddPage('finance','obligations','📆 الالتزامات الدورية',v24RenderObligations,`<div class="p-content"><div style="margin-bottom:10px"><button class="btn btn-primary v24-write" onclick="v24EditObligation()">➕ التزام جديد</button></div><div id="obl-alert"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="obl-body"></div></div></div>`);
   v24AddPage('finance','reconcile','🔍 مطابقة الكشوف',()=>{ if(!document.getElementById('rec-party').options.length) v24RecParties(); },`<div class="p-content"><div class="v24-card"><div class="form-row"><div class="form-group"><label>النوع</label><select id="rec-kind" onchange="v24RecParties()"><option value="client">عميل (دفعاته)</option><option value="supplier">مورد (سداداتنا له)</option></select></div><div class="form-group"><label>الطرف</label><select id="rec-party"></select></div></div>
   <div class="form-row"><div class="form-group"><label>من تاريخ (اختياري)</label><input type="date" id="rec-from"></div><div class="form-group"><label>إلى تاريخ (اختياري)</label><input type="date" id="rec-to"></div></div>
