@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 29-10 • أصناف الشيت</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 29-10 • كشف مقاولي النقل</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -8321,7 +8321,7 @@ const V24_PRESETS={
   admin:{label:'👑 مدير (كل الصلاحيات)',role:'admin',canDelete:true,pages:null},
   prod:{label:'🏭 مسئول الإنتاج والصيانة والفنيين',role:'editor',canDelete:false,pages:['dashboard','equipment','maintenance','parts','preventive','pm-annual','reliab','production','targets','reports','analytics','archive','technicians','inventory']},
   sales:{label:'🧾 مسئول المبيعات (حاسبة السعر فقط)',role:'editor',canDelete:false,pages:['pk-quote']},
-  acct:{label:'💼 مسئول الحسابات والتكاليف',role:'editor',canDelete:false,pages:['dashboard','sales','purchases','accounts','handling','hndan','inventory','costs','financials','treasury','supAccounts','cheques','custody','owners','openbal','obligations','reconcile','breakeven','stocktake']}
+  acct:{label:'💼 مسئول الحسابات والتكاليف',role:'editor',canDelete:false,pages:['dashboard','sales','purchases','accounts','handling','hndan','hndstmt','inventory','costs','financials','treasury','supAccounts','cheques','custody','owners','openbal','obligations','reconcile','breakeven','stocktake']}
 };
 function v24RenderPageChecks(selected,all){
   const box=document.getElementById('user-groups-checks'); box.style.cssText='display:block;margin-bottom:14px';
@@ -10484,6 +10484,85 @@ function pkLoadSheetItems(){
   v24Toast('اتضاف '+toAdd.length+' صنف وملينا '+n+' كمية — راجع وبعدين دوس حفظ رصيد أول المدة');
 }
 
+
+/* ===== كشف حساب مقاولي النقل (الناولون) — صفحة جديدة، مش بتغيّر أي بيانات موجودة ===== */
+const V24_HND_GENERIC='نقل متنوع (من الخزنة)';
+function v24HndRules(){ return v24Cfg('hndRules',[{kw:'بسام',name:'بسام'}]); }
+// اسم المقاول لحركة خزينة ناولون: الحقل نفسه، أو فاتورة الناولون المرتبطة، أو كلمة في البيان (قواعد قابلة للتعديل)
+function v24HndTreName(t){
+  if(t.contractor&&t.contractor!==V24_HND_GENERIC) return t.contractor;
+  if(t.handlingExpenseId){ const h=handlingExpenses.find(x=>x.id===t.handlingExpenseId); if(h&&h.contractor) return h.contractor; }
+  const txt=v24Nz((t.desc||'')+' '+(t.notes||'')+' '+(t.party||''));
+  for(const r of v24HndRules()){ if(r.kw&&txt.includes(v24Nz(r.kw))) return r.name; }
+  return t.contractor||V24_HND_GENERIC;
+}
+// نفس الأرصدة القديمة لكن بالأسماء المصححة (بسام وغيره) ومحسوب فيها دفعات فواتير الناولون النقدية
+getHandlingContractorBalance=function(name){
+  const totalCost=getAllHandlingRecords().filter(r=>(r.contractor||'')===name).reduce((s,x)=>s+(x.amount||0),0);
+  const totalPaid=treasury.filter(t=>t.category==='ناولون / نقل'&&v24HndTreName(t)===name).reduce((s,x)=>s+(x.amount||0),0);
+  return {totalCost,totalPaid,balance:totalCost-totalPaid};
+};
+getAllHandlingContractors=function(){
+  return [...new Set([...getAllHandlingRecords().map(r=>r.contractor),...treasury.filter(t=>t.category==='ناولون / نقل').map(v24HndTreName)].filter(Boolean))].sort();
+};
+// كل حركات حساب المقاولين: مستحق (cost) أو مدفوع (pay)
+function v24HndEntries(){
+  const out=[];
+  sales.forEach(s=>{ if(+s.handling>0) out.push({date:s.date||'',type:'sale',who:s.handlingContractor||'بدون اسم',label:'نقل على فاتورة بيع '+(s.invoice||''),detail:(s.client||'')+(s.product?' — '+s.product:''),cost:+s.handling,pay:0}); });
+  handlingExpenses.forEach(h=>{ const op=/رصيد افتتاح/.test(h.desc||''); out.push({date:h.date||'',type:op?'open':'direct',who:h.contractor||'بدون اسم',label:op?'رصيد افتتاحي':'نقل مباشر (فاتورة ناولون)'+(h.payment&&h.payment!=='آجل'?' — '+h.payment:' — آجل'),detail:h.desc||'',cost:+h.total||0,pay:0}); });
+  treasury.forEach(t=>{ if(t.category==='ناولون / نقل'&&t.type==='out'||t.category==='ناولون / نقل'&&!t.type) out.push({date:t.date||'',type:'pay',who:v24HndTreName(t),label:t.handlingExpenseId?'دفع فاتورة ناولون من الخزينة':'دفعة من الخزينة',detail:t.desc||'',cost:0,pay:+t.amount||0}); });
+  return out;
+}
+const V24_HND_TYPE_LABEL={sale:'نقل فواتير بيع',direct:'نقل مباشر',open:'رصيد افتتاحي',pay:'مدفوعات'};
+function v24HndYears(){ return [...new Set(v24HndEntries().map(e=>(e.date||'').slice(0,4)).filter(Boolean))].sort(); }
+function v24RenderHndStmt(){
+  const el=document.getElementById('hs-body'); if(!el) return;
+  const all=v24HndEntries();
+  const ysel=document.getElementById('hs-year'); const years=v24HndYears();
+  if(ysel&&!ysel.options.length){ ysel.innerHTML='<option value="">كل الفترة</option>'+years.map(y=>`<option>${y}</option>`).join(''); const cy=String(new Date().getFullYear()); if(years.includes(cy)) ysel.value=cy; }
+  const year=ysel?ysel.value:'';
+  const names=[...new Set(all.map(e=>e.who))].sort((a,b)=>a.localeCompare(b,'ar'));
+  const csel=document.getElementById('hs-con'); const cur=csel.value;
+  csel.innerHTML='<option value="">📋 كل المقاولين (ملخص)</option>'+names.map(n=>`<option ${n===cur?'selected':''}>${v24Esc(n)}</option>`).join('');
+  if(cur&&names.includes(cur)) csel.value=cur;
+  const con=csel.value;
+  const inP=e=>!year||(e.date||'').startsWith(year), before=e=>year&&(e.date||'')<year;
+  if(!con){
+    const rows=names.map(n=>{ const l=all.filter(e=>e.who===n); const op=l.filter(before).reduce((s,e)=>s+e.cost-e.pay,0); const p=l.filter(inP);
+      const sale=p.filter(e=>e.type==='sale').reduce((s,e)=>s+e.cost,0), dir=p.filter(e=>e.type==='direct'||e.type==='open').reduce((s,e)=>s+e.cost,0), paid=p.reduce((s,e)=>s+e.pay,0);
+      return {n,op,sale,dir,paid,bal:op+sale+dir-paid,cnt:p.length}; }).filter(r=>r.cnt||Math.abs(r.op)>0.5).sort((a,b)=>b.bal-a.bal);
+    const T=k=>rows.reduce((s,r)=>s+r[k],0);
+    el.innerHTML=`<div class="v24-kpis"><div class="v24-kpi"><div class="l">نقل على فواتير بيع</div><div class="v">${fmt(Math.round(T('sale')))}</div></div><div class="v24-kpi"><div class="l">نقل مباشر</div><div class="v">${fmt(Math.round(T('dir')))}</div></div><div class="v24-kpi"><div class="l">مدفوع من الخزينة</div><div class="v">${fmt(Math.round(T('paid')))}</div></div><div class="v24-kpi"><div class="l">الرصيد (مستحق للمقاولين)</div><div class="v">${fmt(Math.round(T('bal')))}</div></div></div>
+    <div class="card" style="margin-top:10px"><div class="card-body" style="padding:0;overflow:auto"><table class="v24-table"><thead><tr><th>مقاول النقل</th><th>رصيد سابق</th><th>نقل فواتير بيع</th><th>نقل مباشر</th><th>مدفوع</th><th>الرصيد</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${v24Esc(r.n)}</b></td><td>${fmt(Math.round(r.op))}</td><td>${fmt(Math.round(r.sale))}</td><td>${fmt(Math.round(r.dir))}</td><td>${fmt(Math.round(r.paid))}</td><td style="font-weight:700;color:${r.bal>0.5?'var(--c-danger)':r.bal<-0.5?'#0f6e56':'inherit'}">${fmt(Math.round(r.bal))}</td><td><button class="btn" style="padding:2px 8px;font-size:11px" onclick="document.getElementById('hs-con').value=this.dataset.n;v24RenderHndStmt()" data-n="${v24Esc(r.n)}">📄 كشف</button></td></tr>`).join('')}</tbody></table></div></div>
+    <div style="font-size:11px;color:#888;margin-top:6px">الرصيد الموجب = لسه مستحق للمقاول. السالب = مدفوع له أكتر من المسجل عليه (أو نقل اتدفع نقدًا من الخزينة من غير فاتورة).</div>`;
+  } else {
+    const tf=document.getElementById('hs-type')?document.getElementById('hs-type').value:'';
+    const l=all.filter(e=>e.who===con).sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.pay?1:0)-(b.pay?1:0));
+    const op=l.filter(before).reduce((s,e)=>s+e.cost-e.pay,0);
+    let p=l.filter(inP); if(tf) p=p.filter(e=>e.type===tf||(tf==='direct'&&e.type==='open'));
+    let run=tf?0:op; const rowsH=p.map(e=>{ run+=e.cost-e.pay; return `<tr><td>${e.date}</td><td>${v24Esc(e.label)}</td><td>${v24Esc(e.detail)}</td><td>${e.cost?fmt(Math.round(e.cost)):''}</td><td>${e.pay?fmt(Math.round(e.pay)):''}</td><td>${fmt(Math.round(run))}</td></tr>`; }).join('');
+    const cost=p.reduce((s,e)=>s+e.cost,0), pay=p.reduce((s,e)=>s+e.pay,0);
+    window.__hsPrint={con,year,op:tf?0:op,rows:rowsH,cost,pay,bal:(tf?0:op)+cost-pay,tf};
+    el.innerHTML=`<div class="v24-card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><b style="font-size:15px">كشف حساب: ${v24Esc(con)}</b><select id="hs-type" onchange="v24RenderHndStmt()" style="padding:5px 8px"><option value="">كل الحركات</option>${Object.entries(V24_HND_TYPE_LABEL).filter(([k])=>k!=='open').map(([k,v])=>`<option value="${k}" ${tf===k?'selected':''}>${v}</option>`).join('')}</select><button class="btn" onclick="v24HndPrint()">🖨️ طباعة</button><button class="btn" onclick="document.getElementById('hs-con').value='';v24RenderHndStmt()">⬅ رجوع للملخص</button></div>
+    <div class="v24-kpis"><div class="v24-kpi"><div class="l">رصيد سابق</div><div class="v">${fmt(Math.round(tf?0:op))}</div></div><div class="v24-kpi"><div class="l">مستحق في الفترة</div><div class="v">${fmt(Math.round(cost))}</div></div><div class="v24-kpi"><div class="l">مدفوع</div><div class="v">${fmt(Math.round(pay))}</div></div><div class="v24-kpi"><div class="l">الرصيد</div><div class="v">${fmt(Math.round((tf?0:op)+cost-pay))}</div></div></div>
+    <div style="overflow:auto;margin-top:8px"><table class="v24-table"><thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>مستحق</th><th>مدفوع</th><th>الرصيد</th></tr></thead><tbody>${!tf&&year&&Math.abs(op)>0.5?`<tr style="background:#f6f6f6"><td></td><td>رصيد مرحّل</td><td></td><td></td><td></td><td>${fmt(Math.round(op))}</td></tr>`:''}${rowsH||'<tr><td colspan="6" style="text-align:center;color:#888;padding:14px">مفيش حركات</td></tr>'}</tbody></table></div></div>`;
+  }
+  v24HndRulesRender();
+}
+function v24HndPrint(){
+  const d=window.__hsPrint; if(!d) return;
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>كشف حساب ${v24Esc(d.con)}</title><style>body{font-family:Tahoma,Arial;padding:24px}h2{color:#185FA5;border-bottom:2px solid #185FA5;padding-bottom:6px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #ccc;padding:5px 8px;text-align:right}th{background:#eef3f8}.t{margin:8px 0;font-size:14px}</style></head><body><h2>كشف حساب مقاول نقل — ${v24Esc(d.con)}</h2><div class="t">الفترة: ${d.year||'كل الفترة'} | تاريخ الطباعة: ${today()}</div><table><thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>مستحق</th><th>مدفوع</th><th>الرصيد</th></tr></thead><tbody>${d.op?`<tr><td></td><td>رصيد سابق</td><td></td><td></td><td></td><td>${fmt(Math.round(d.op))}</td></tr>`:''}${d.rows}</tbody><tfoot><tr><th colspan="3">الإجمالي</th><th>${fmt(Math.round(d.cost))}</th><th>${fmt(Math.round(d.pay))}</th><th>${fmt(Math.round(d.bal))}</th></tr></tfoot></table><script>window.print()<\/script></body></html>`);
+}
+function v24HndRulesRender(){
+  const el=document.getElementById('hs-rules'); if(!el) return;
+  el.innerHTML=`<b>ربط أسماء المقاولين من بيان الخزينة</b> <span style="font-size:11px;color:#888">أي دفعة ناولون بيانها فيه الكلمة دي (ومالهاش مقاول محدد) تتحسب على المقاول. مفيش بيانات بتتغير.</span>
+  <div style="margin:6px 0">${v24HndRules().map((r,i)=>`<span class="badge" style="margin:2px;padding:4px 8px;background:#eef3f8;border-radius:12px">«${v24Esc(r.kw)}» ← ${v24Esc(r.name)} <a href="#" onclick="v24HndRuleDel(${i});return false" style="color:#b3261e">✕</a></span>`).join('')||'<span style="color:#888">لا يوجد</span>'}</div>
+  <input id="hs-kw" placeholder="كلمة في البيان (مثال: يسري)" style="padding:5px 8px"> <input id="hs-nm" placeholder="اسم المقاول (مثال: يسري شريف)" style="padding:5px 8px"> <button class="btn" onclick="v24HndRuleAdd()">➕ إضافة</button>`;
+}
+function v24HndRuleAdd(){ const kw=v24v('hs-kw').trim(), nm=v24v('hs-nm').trim(); if(!kw||!nm){ alert('اكتب الكلمة والاسم'); return; } const r=v24HndRules().slice(); r.push({kw,name:nm}); v24SetCfg('hndRules',r); v24RenderHndStmt(); if(typeof renderHandlingPage==='function'&&document.getElementById('hnd-balances-body')) renderHandlingBalances(); }
+function v24HndRuleDel(i){ const r=v24HndRules().slice(); r.splice(i,1); v24SetCfg('hndRules',r); v24RenderHndStmt(); }
+
 // ================= v24.2 — Firebase Authentication (Email/Password) + قائمة مصرّح لهم =================
 // كل مستخدم له حساب سحابة بإيميل تركيبي: <username>@saimd-app.com (+ .v<n> لو المدير أعاد تعيين كلمة سره).
 // الدخول للبيانات مشروط بوجود وثيقة saimd_allow/<email> (يكتبها المدير) — تحميها قواعد firestore.rules.
@@ -10698,6 +10777,7 @@ deleteUser=async function(id){
   v24AddPage('finance','import','📥 استيراد بيانات',v24RenderImport,`<div class="p-content"><div class="v24-warn">للمدير فقط. اختار ملف حزمة البيانات (JSON) وهتشوف معاينة قبل التنفيذ. كل حركة مستوردة لها مفتاح فمفيش تكرار، وأي دفعة تقدر تلغيها بالكامل.</div><div class="v24-card"><input type="file" accept=".json,application/json" onchange="v24ImpLoad(this)"></div><div id="imp-preview"></div><div class="v24-card"><b>☁️ فحص السحابة</b> <span style="font-size:12px;color:#888">يقارن اللي على الجهاز باللي على السحابة، ويرفع الناقص. استخدمه من جهازك الأساسي لو الأجهزة التانية مش شايفة بياناتك أو حسابات المستخدمين.</span><div style="margin:8px 0"><button class="btn" onclick="v24CloudCheck()">🔎 فحص السحابة</button></div><div id="imp-cloud-body"></div></div><div class="v24-card"><b>الدفعات المستوردة</b><div id="imp-batches" style="margin-top:8px"></div></div></div>`);
   v24AddPage('finance','audit','🛡️ سجل التدقيق',renderAuditPage,`<div class="p-content"><div class="v24-card" id="v24-sec"></div><div class="filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><select id="v24-aud-act" onchange="v24RenderAuditRows()"><option value="">كل العمليات</option><option value="create">إضافة</option><option value="update">تعديل</option><option value="delete">حذف</option><option value="lock">قفل</option><option value="unlock">فتح قفل</option><option value="login_failed">دخول فاشل</option></select><select id="v24-aud-key" onchange="v24RenderAuditRows()"><option value="">كل الأقسام</option></select><input id="v24-aud-usr" placeholder="مستخدم" oninput="v24RenderAuditRows()"><input id="v24-aud-q" placeholder="بحث" oninput="v24RenderAuditRows()"><button class="btn" onclick="renderAuditPage()">🔄</button><button class="btn" onclick="v24ExportAudit()">📥 CSV</button></div><div class="card"><div class="card-body" style="padding:0;overflow:auto;max-height:70vh" id="v24-audit-body"></div></div></div>`);
   const _ra=renderAuditPage; renderAuditPage=async function(){ const el=document.getElementById('v24-sec'); if(el) el.innerHTML='<b>فحص الأمان</b>'+v24SecurityChecks().map(c=>`<div class="v24-${c[0]==='red'?'bad':'warn'}" style="margin-top:6px">${c[1]}</div>`).join(''); return _ra(); }; PAGE_RENDERS.audit=renderAuditPage;
+  v24AddPage('commerce','hndstmt','🚚 كشف حساب مقاولي النقل',v24RenderHndStmt,`<div class="p-content"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><select id="hs-year" onchange="v24RenderHndStmt()" style="padding:6px 10px"></select><select id="hs-con" onchange="v24RenderHndStmt()" style="padding:6px 10px"></select></div><div id="hs-body"></div><div class="v24-card" id="hs-rules" style="margin-top:12px"></div></div>`);
   v24AddPage('commerce','hndan','📈 تحليل الناولون',v24RenderHandlingAnalysis,`<div class="p-content"><div style="margin-bottom:10px;display:flex;gap:8px">${v24YearSelect('ha-year','v24RenderHandlingAnalysis')}${sel('ha-month',months,'v24RenderHandlingAnalysis')}</div><div class="v24-kpis" id="ha-kpis"></div><div id="ha-warn"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="ha-body"></div></div></div>`);
   v24AddPage('machines','reliab','📉 موثوقية المعدات',v24RenderReliability,`<div class="p-content"><div style="margin-bottom:10px">${v24YearSelect('rl-year','v24RenderReliability')}</div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="rl-body"></div></div></div>`);
   // نطاق الأقسام المسموحة: صفحات التدقيق للمدير فقط
