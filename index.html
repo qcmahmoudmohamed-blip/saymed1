@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 29-10 • أرصدة 2025 وطنطاوي (٢)</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 29-10 • إصلاح نموذج العميل</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -9212,7 +9212,7 @@ const PK_FIXED_CATS=['عمالة','إيجار / نصيب','مرتبات الكو
 const PK_REV_CATS=['مبيعات تعبئة','أجر تشغيل لحساب الغير','أخرى'];
 const PK_STOP=['عطل ميكانيكي','عطل كهربائي','تغيير مقاس/منتج','نقص خامات','انتظار تشغيل','تنظيف وضبط','أخرى'];
 function pkCfg(){ return Object.assign({name:'فلوباك 350',speed:50,shiftH:8},v24Cfg('pkCfg',{})); }
-const pkN=x=>parseFloat(x)||0;
+const pkN=x=>parseFloat(typeof x==="string"?v24ArDigits(x):x)||0;
 const pkPct=x=>isFinite(x)?(x*100).toFixed(1)+'%':'—';
 const pkF=(x,d=0)=>isFinite(x)?Number(x).toLocaleString('en-US',{maximumFractionDigits:d,minimumFractionDigits:d}):'—';
 function pkMonthSel(id,fn){ const ms=new Set([today().slice(0,7)]); [...V24D.pkRuns,...V24D.pkLedger,...V24D.pkAcct.filter(r=>r.kind!=='opening')].forEach(r=>r.date&&ms.add(r.date.slice(0,7))); const curM=today().slice(0,7); const cur=v24v(id)||(ms.has(curM)&&[...V24D.pkRuns,...V24D.pkLedger,...V24D.pkAcct.filter(r=>r.kind!=='opening')].some(r=>(r.date||'').startsWith(curM))?curM:'all'); return `<select id="${id}" onchange="${fn}()" style="padding:6px 10px"><option value="all" ${cur==='all'?'selected':''}>كل الفترة</option>${[...ms].sort().reverse().map(m=>`<option ${m===cur?'selected':''}>${m}</option>`).join('')}</select>`; }
@@ -10107,7 +10107,7 @@ function v24ImpAddCash(c,batch){
   } else if(c.target==='payment') payments.push({...base,id:nextId.pay++,client:c.client,method:'كاش',ref:'',notes:(c.desc||'')+' — '+note});
   else if(c.target==='supplierPayment'){ if(c.newSupplier&&!suppliersList.some(x=>v24Nz(x)===v24Nz(c.supplier))) suppliersList.push(c.supplier); supplierPayments.push({...base,id:nextId.supPay++,supplier:c.supplier,method:'كاش',ref:'',notes:(c.desc||'')+' — '+note}); }
   else if(c.target==='pkLedger') V24D.pkLedger.push({...base,id:V24D.pkLedger.reduce((m,x)=>Math.max(m,x.id),0)+1,kind:c.kind,category:c.category,desc:c.desc||c.category,ref:'',createdBy:v24Who()});
-  else if(c.target==='pkAcct') V24D.pkAcct.push({...base,id:V24D.pkAcct.reduce((m,x)=>Math.max(m,x.id),0)+1,customer:c.customer,kind:'receipt',ref:'',note:(c.desc||'')+' — حركة خزنة',createdBy:v24Who()});
+  else if(c.target==='pkAcct') V24D.pkAcct.push({...base,id:V24D.pkAcct.reduce((m,x)=>Math.max(m,x.id),0)+1,customer:c.customer,kind:c.acctKind||'receipt',ref:'',note:(c.desc||'')+' — حركة خزنة',createdBy:v24Who()});
 }
 function v24ImpPreview(){
   const p=v24ImpPack, pl=v24ImpPlan(); const sum=a=>a.reduce((t,x)=>t+(Number(x.amount)||0),0);
@@ -10319,6 +10319,154 @@ function v24ObApplySuggest(){
   v24SetCfg('openBal',o); v24RenderOpenBal(); alert('اتطبقت الاقتراحات. راجع الأرقام واضغط حفظ لو عدلت حاجة.');
 }
 
+
+/* ===== تصحيح التوجيه: نقل حركات من خزينة الحقن لحسابات التعبئة والتغليف بدون إعادة استيراد ===== */
+const V24_RR_PARTIES=[
+  {names:['احمد مصطفى'],customer:'أحمد مصطفى'},
+  {names:['سليمان بلاست','اسلام سليمان'],customer:'اسلام سليمان'},
+  {names:['محمد صلاح','زاد'],customer:'محمد صلاح'},
+  {names:['شيف مصطفى','الشيف مصطفى'],customer:'الشيف مصطفى'}
+];
+const V24_RR_ALIAS={'زاد':'محمد صلاح','كوفير زاد':'محمد صلاح','سليمان بلاست':'اسلام سليمان','شيف مصطفى موسي':'الشيف مصطفى','شيف مصطفى':'الشيف مصطفى','احمد مصطفى':'أحمد مصطفى'};
+function v24RRtok(s){ return v24Nz(s||'').replace(/[^؀-ۿ0-9a-z ]/gi,' ').split(' ').filter(Boolean).map(w=>w.replace(/^ال/,'')); }
+function v24RRhas(text,name){ const t=v24RRtok(text), n=v24RRtok(name); return n.length&&n.every(w=>t.includes(w)); }
+function v24RRMatch(t){
+  if(!t||t.type!=='in'||V24_OWNER_CATS.includes(t.category)) return null;
+  const txt=(t.party||'')+' '+(t.desc||'');
+  if(/بيع/.test(txt)&&/(كرتون|كراتين|كارتون)/.test(v24Nz(txt).replace(/ة/g,'ه')+' '+txt)&&!/جملة/.test(txt)) return {to:'ledger'};
+  for(const r of V24_RR_PARTIES){ if(r.names.some(n=>v24RRhas(txt,n))){ const sc=/مبيعات نقدية/.test(t.subcategory||'')||/بيع نقد/.test(t.party||''); return {to:'acct',customer:r.customer,kind:sc?'sale_cash':'receipt'}; } }
+  return null;
+}
+function v24RRPlan(){
+  const moves=[], ren={};
+  treasury.forEach(t=>{ const m=v24RRMatch(t); if(m) moves.push({t,m}); });
+  V24D.pkAcct.forEach(a=>{ const to=V24_RR_ALIAS[a.customer]; if(to&&to!==a.customer) ren[a.customer]=(ren[a.customer]||0)+1; });
+  const inj=[]; const names=V24_RR_PARTIES.flatMap(r=>r.names);
+  [['فواتير مبيعات',sales,'client'],['تحصيلات',payments,'client']].forEach(([lab,arr,f])=>{ const n=(arr||[]).filter(x=>names.some(nm=>v24RRhas(x[f]||'',nm))).length; if(n) inj.push(lab+' باسم عملاء التعبئة: '+n); });
+  return {moves,ren,inj};
+}
+function v24RenderReroute(){
+  const el=document.getElementById('rr-body'); if(!el) return;
+  const p=v24RRPlan(), log=v24Cfg('rerouteLog',[]);
+  const sum=p.moves.reduce((s,x)=>s+(+x.t.amount||0),0);
+  const byC={}; p.moves.forEach(x=>{ const k=x.m.to==='ledger'?'خزنة الكوفير ← مبيعات تعبئة (كراتين)':x.m.customer+(x.m.kind==='sale_cash'?' (بيع نقدي)':''); (byC[k]=byC[k]||[0,0]); byC[k][0]++; byC[k][1]+=+x.t.amount||0; });
+  el.innerHTML=`<div class="v24-card">
+   <div class="v24-kpis"><div class="v24-kpi"><div class="l">حركات هتتنقل من خزينة الحقن</div><div class="v">${p.moves.length}</div></div><div class="v24-kpi"><div class="l">إجمالي</div><div class="v">${fmt(sum)}</div></div><div class="v24-kpi"><div class="l">عملاء هيتوحّد اسمهم</div><div class="v">${Object.keys(p.ren).length}</div></div></div>
+   ${p.moves.length?`<table class="v24-table" style="margin-top:8px"><thead><tr><th>هتروح لـ</th><th>العدد</th><th>الإجمالي</th></tr></thead><tbody>${Object.entries(byC).map(([k,v])=>`<tr><td>${v24Esc(k)}</td><td>${v[0]}</td><td>${fmt(v[1])}</td></tr>`).join('')}</tbody></table>
+   <details style="margin-top:6px"><summary>تفاصيل الحركات</summary><table class="v24-table"><thead><tr><th>التاريخ</th><th>المبلغ</th><th>البيان</th><th>إلى</th></tr></thead><tbody>${p.moves.map(x=>`<tr><td>${x.t.date}</td><td>${fmt(x.t.amount)}</td><td>${v24Esc((x.t.party||'')+' — '+(x.t.desc||''))}</td><td>${v24Esc(x.m.to==='ledger'?'مبيعات تعبئة':x.m.customer)}</td></tr>`).join('')}</tbody></table></details>`:'<div style="color:#0f6e56;margin-top:8px">✔ مفيش حركات محتاجة نقل.</div>'}
+   ${Object.keys(p.ren).length?`<div style="margin-top:8px"><b>توحيد أسماء عملاء التعبئة:</b> ${Object.entries(p.ren).map(([k,n])=>v24Esc(k)+' ← '+v24Esc(V24_RR_ALIAS[k])+' ('+n+' حركة)').join(' • ')}</div>`:''}
+   ${p.inj.length?`<div class="v24-warn" style="margin-top:8px">ملاحظة: ${p.inj.map(v24Esc).join(' • ')} — دي مش بتتنقل تلقائيًا (راجعها يدويًا).</div>`:''}
+   <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="v24RRApply()" ${p.moves.length||Object.keys(p.ren).length?'':'disabled'}>✅ تنفيذ النقل والتوحيد</button>${log.length?`<button class="btn" style="color:var(--c-danger)" onclick="v24RRUndo()">↩️ تراجع عن آخر عملية (${log[log.length-1].moved.length+log[log.length-1].ren.length} تغيير)</button>`:''}</div>
+   <div style="font-size:11px;color:#888;margin-top:6px">النقل بيحافظ على التاريخ والمبلغ والمصدر، وما بيمسحش حاجة ما اتستوردتش. التنفيذ آمن لو اتكرر.</div></div>`;
+}
+function v24RRApply(){
+  if(!currentUser||currentUser.role==='viewer'){ alert('غير مسموح'); return; }
+  const p=v24RRPlan(); if(!p.moves.length&&!Object.keys(p.ren).length) return;
+  if(!confirm(`هتنقل ${p.moves.length} حركة وتوحّد ${Object.keys(p.ren).length} اسم عميل. متأكد؟`)) return;
+  const log={at:new Date().toISOString(),moved:[],ren:[]};
+  let aid=V24D.pkAcct.reduce((m,x)=>Math.max(m,x.id),0), lid=V24D.pkLedger.reduce((m,x)=>Math.max(m,x.id),0);
+  p.moves.forEach(({t,m})=>{
+    const keep={date:t.date,amount:t.amount,importKey:t.importKey,importBatch:t.importBatch,fromImport:t.fromImport,createdBy:v24Who()};
+    let nr;
+    if(m.to==='ledger'){ nr={...keep,id:++lid,kind:'revenue',category:'مبيعات تعبئة',desc:(t.desc||t.party||'بيع كراتين'),ref:''}; V24D.pkLedger.push(nr); }
+    else { nr={...keep,id:++aid,customer:m.customer,kind:m.kind,ref:'',note:((t.desc||'')+' — نُقل من خزينة الحقن').trim()}; V24D.pkAcct.push(nr); }
+    log.moved.push({orig:t,to:m.to,newId:nr.id});
+  });
+  const ids=new Set(p.moves.map(x=>x.t)); treasury=treasury.filter(t=>!ids.has(t));
+  V24D.pkAcct.forEach(a=>{ const to=V24_RR_ALIAS[a.customer]; if(to&&to!==a.customer){ log.ren.push({id:a.id,from:a.customer}); a.customer=to; } });
+  const lg=v24Cfg('rerouteLog',[]); lg.push(log); v24SetCfg('rerouteLog',lg);
+  saveAll(); DB.save('pkAcct',V24D.pkAcct); DB.save('pkLedger',V24D.pkLedger);
+  alert('تم: نقل '+log.moved.length+' حركة وتوحيد '+log.ren.length+' حركة'); v24RenderReroute();
+}
+function v24RRUndo(){
+  const lg=v24Cfg('rerouteLog',[]); const log=lg[lg.length-1]; if(!log) return;
+  if(!confirm('هترجّع آخر عملية نقل لمكانها الأصلي. متأكد؟')) return;
+  log.moved.forEach(x=>{ if(x.to==='ledger') V24D.pkLedger=V24D.pkLedger.filter(r=>r.id!==x.newId); else V24D.pkAcct=V24D.pkAcct.filter(r=>r.id!==x.newId); treasury.push(x.orig); });
+  log.ren.forEach(r=>{ const a=V24D.pkAcct.find(z=>z.id===r.id); if(a) a.customer=r.from; });
+  lg.pop(); v24SetCfg('rerouteLog',lg);
+  saveAll(); DB.save('pkAcct',V24D.pkAcct); DB.save('pkLedger',V24D.pkLedger); v24RenderReroute();
+}
+
+
+/* ===== تحسينات التعبئة والتغليف: عميل جديد، تأكيد الحفظ، إنشاء أصناف من الفاتورة والمخزن ===== */
+function v24ArDigits(s){ return String(s==null?'':s).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/٫/g,'.').replace(/[٬,]/g,''); }
+function v24Toast(msg,bad){
+  let t=document.getElementById('v24-toast'); if(!t){ t=document.createElement('div'); t.id='v24-toast'; t.style.cssText='position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:99999;padding:10px 18px;border-radius:8px;color:#fff;font-size:14px;box-shadow:0 2px 10px #0004;max-width:90vw;text-align:center'; document.body.appendChild(t); }
+  t.style.background=bad?'#b3261e':'#0f6e56'; t.textContent=msg; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>{ t.style.display='none'; },3500);
+}
+// عملاء بدون حركات (اتفتحوا بزرار عميل جديد)
+function pkExtraCust(){ return v24Cfg('pkExtraCust',[]); }
+const _pkCustomersOrig=pkCustomers;
+pkCustomers=function(){ return [...new Set([..._pkCustomersOrig(),...pkExtraCust()])].filter(Boolean).sort((a,b)=>a.localeCompare(b,'ar')); };
+function pkNewCustomer(){
+  if(!v24Can('write')){ alert('مفيش صلاحية تعديل'); return; }
+  const nm=(prompt('اسم العميل الجديد:')||'').trim().replace(/\s+/g,' '); if(!nm) return;
+  const ex=pkCustomers().find(c=>v24Nz(c)===v24Nz(nm));
+  if(ex){ v24Toast('العميل موجود بالفعل: '+ex,true); return; }
+  const ex2=pkExtraCust(); ex2.push(nm); v24SetCfg('pkExtraCust',ex2);
+  v24Toast('تم فتح حساب: '+nm); pkRenderAccounts();
+  if(typeof pkNewAcct==='function'){ pkNewAcct('acc','receipt',nm); const f=pkFormEl('acc'); if(f) f.scrollIntoView({behavior:'smooth',block:'start'}); }
+}
+// فتح النموذج يرجّع المستخدم لأعلى عشان يشوفه
+const _pkNewAcctOrig=pkNewAcct;
+pkNewAcct=function(back,kind,cust){ _pkNewAcctOrig(back,kind,cust); const f=pkFormEl(back); if(f&&f.scrollIntoView) f.scrollIntoView({behavior:'smooth',block:'start'}); };
+// حفظ حركة العميل: أرقام عربية + رسائل واضحة + تأكيد
+const _pkSaveAcctOrig=pkSaveAcct;
+pkSaveAcct=function(){
+  const am=document.getElementById('pka-amt'); if(am) am.value=v24ArDigits(am.value);
+  const cu=document.getElementById('pka-cust'); if(cu) cu.value=cu.value.replace(/\s+/g,' ').trim();
+  const n0=V24D.pkAcct.length, id=parseInt(v24v('pka-id'));
+  const cust=cu?cu.value:'';
+  if(cust&&!id){ const ex=_pkCustomersOrig().concat(pkExtraCust()).find(c=>c!==cust&&v24Nz(c)===v24Nz(cust)); if(ex&&confirm('فيه عميل بنفس الاسم تقريبًا: «'+ex+'». أستخدمه؟')) cu.value=cust=ex; }
+  try{ _pkSaveAcctOrig(); }catch(e){ alert('حصل خطأ أثناء الحفظ: '+e.message); return; }
+  if(!id&&V24D.pkAcct.length===n0) return;           // رسالة التحقق ظهرت من الدالة الأصلية
+  v24Toast('✔ تم الحفظ'+(id?'':' — '+cust));
+};
+// فاتورة الشراء: لو الصنف مش موجود، اعرض إنشاءه بدل ما الحفظ يفشل
+const _pkSavePurchOrig=pkSavePurch;
+pkSavePurch=function(){
+  if(!v24Can('write')){ alert('مفيش صلاحية تعديل'); return; }
+  const names=[...new Set([...document.querySelectorAll('#pkp-lines tbody tr')].map(tr=>{ const q=tr.querySelector('.pkl-item'); return q?q.value.replace(/\s+/g,' ').trim():''; }).filter(Boolean))];
+  const missing=names.filter(n=>!V24D.pkItems.some(i=>i.name===n));
+  if(missing.length){
+    if(!confirm('الأصناف دي مش موجودة في المخزن:\n• '+missing.join('\n• ')+'\n\nأضيفها كأصناف جديدة وأكمل الحفظ؟')) return;
+    missing.forEach(n=>{ const unitEl=null; V24D.pkItems.push({id:pkNextId(V24D.pkItems),name:n,group:'خامات تعبئة',unit:'',cost:0,minQty:0,note:'أُضيف من فاتورة شراء',createdBy:v24Who()}); });
+    DB.save('pkItems',V24D.pkItems);
+    document.querySelectorAll('#pkp-lines tbody tr .pkl-item').forEach(i=>{ i.value=i.value.replace(/\s+/g,' ').trim(); });
+  }
+  _pkSavePurchOrig();
+};
+// رصيد أول المدة: ما يقفش لو المخزن فاضي + زرار صنف جديد
+const _pkOpeningFormOrig=pkOpeningForm;
+pkOpeningForm=function(){
+  if(!v24Can('write')) return;
+  if(!V24D.pkItems.length){ pkNewItem(); v24Toast('المخزن فاضي — ضيف الأصناف الأول (أو من فاتورة شراء)'); return; }
+  _pkOpeningFormOrig();
+  const card=document.querySelector('#pks-form .v24-card'); if(card){ const b=document.createElement('button'); b.className='btn'; b.style.margin='6px 0'; b.textContent='➕ صنف جديد (مش في القائمة)'; b.onclick=()=>pkQuickItemInOpening(); card.insertBefore(b,card.querySelector('.form-row')); }
+};
+function pkQuickItemInOpening(){
+  const nm=(prompt('اسم الصنف الجديد:')||'').replace(/\s+/g,' ').trim(); if(!nm) return;
+  if(V24D.pkItems.some(i=>i.name===nm)){ v24Toast('الصنف موجود بالفعل',true); return; }
+  const unit=(prompt('الوحدة (مثال: كرتونة 1000 / بالة / ألف) — اختياري:')||'').trim();
+  const grp=(prompt('المجموعة — اختياري (سيبها فاضية = خامات تعبئة):')||'').trim()||'خامات تعبئة';
+  V24D.pkItems.push({id:pkNextId(V24D.pkItems),name:nm,group:grp,unit,cost:0,minQty:0,note:'',createdBy:v24Who()});
+  DB.save('pkItems',V24D.pkItems); pkOpeningForm(); v24Toast('✔ اتضاف الصنف: '+nm);
+}
+// حقول الأرقام في نماذج التعبئة: نص بلوحة أرقام (بتقبل الأرقام العربية ومش بتفضى لما تكتب ٢٥٠٠)
+(function(){
+  const SEL='#pk-acc-form,#pk-sal-form,#pks-form,#pkp-form,#pk-form,#pk-form2,#pkpc-form';
+  const fix=root=>{ if(!root.querySelectorAll) return; root.querySelectorAll('input[type=number]').forEach(i=>{ if(i.closest(SEL)){ i.type='text'; i.setAttribute('inputmode','decimal'); i.removeAttribute('step'); i.removeAttribute('min'); } }); };
+  const start=()=>{ try{ new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(n=>{ if(n.nodeType===1) fix(n); }))).observe(document.body,{childList:true,subtree:true}); }catch(e){} };
+  if(document.body) start(); else document.addEventListener('DOMContentLoaded',start);
+})();
+// نموذجين بنفس الأرقام (المبيعات + حسابات العملاء) كانوا بيتعارضوا: الحفظ بيقرا النموذج القديم الفاضي → "التاريخ واسم العميل مطلوبان"
+function pkClearAcctForms(){ ['pk-sal-form','pk-acc-form'].forEach(id=>{ const e=document.getElementById(id); if(e) e.innerHTML=''; }); }
+const _pkNewAcct2=pkNewAcct;
+pkNewAcct=function(back,kind,cust){ pkClearAcctForms(); _pkNewAcct2(back,kind,cust); };
+const _pkEditAcct2=pkEditAcct;
+pkEditAcct=function(id,back){ pkClearAcctForms(); _pkEditAcct2(id,back); };
+['pkRenderSales','pkRenderAccounts'].forEach(n=>{ const f=window[n]; if(typeof f==='function') window[n]=function(){ const other=n==='pkRenderSales'?'pk-acc-form':'pk-sal-form'; const e=document.getElementById(other); if(e) e.innerHTML=''; return f.apply(this,arguments); }; });
+
 // ================= v24.2 — Firebase Authentication (Email/Password) + قائمة مصرّح لهم =================
 // كل مستخدم له حساب سحابة بإيميل تركيبي: <username>@saimd-app.com (+ .v<n> لو المدير أعاد تعيين كلمة سره).
 // الدخول للبيانات مشروط بوجود وثيقة saimd_allow/<email> (يكتبها المدير) — تحميها قواعد firestore.rules.
@@ -10510,7 +10658,7 @@ deleteUser=async function(id){
   v24AddPage('packaging','pk-prod','🏭 الإنتاج',pkRenderProd,`<div class="p-content"><div class="v24-warn">وحدة مستقلة لماكينة فلوباك 350 — بياناتها منفصلة تمامًا عن خزينة وتكاليف مصنع الحقن.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pk-prod-filter"></span><button class="btn btn-primary" id="pk-prod-add" onclick="pkNewRun()">➕ تشغيلة جديدة</button></div><div id="pk-form"></div><div class="v24-kpis" id="pk-prod-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-prod-body"></div></div></div>`);
   v24AddPage('packaging','pk-cost','🏦 خزنة الكوفير',pkRenderCost,`<div class="p-content"><div class="v24-warn">خزنة الكوفير مستقلة تمامًا عن خزينة مصنع الحقن: مصروفات الموردين والمرتبات والإيجار وتحصيلات العملاء.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pk-cost-filter"></span><button class="btn btn-primary" id="pk-cost-add" onclick="pkNewLed()">➕ حركة جديدة</button></div><div id="pk-form2"></div><div class="v24-kpis" id="pk-cost-kpis"></div><div id="pk-cost-sup"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-cost-body"></div></div></div>`);
   v24AddPage('packaging','pk-sales','🧾 المبيعات',pkRenderSales,`<div class="p-content"><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><span id="pk-sal-filter"></span><select id="pk-sc" onchange="pkRenderSales()" style="padding:6px 10px"><option value="">كل العملاء</option></select><button class="btn btn-primary" id="pk-sal-add" onclick="pkNewAcct('sales')">➕ مبيعة جديدة</button></div><div id="pk-sal-form"></div><div class="v24-kpis" id="pk-sal-kpis"></div><div id="pk-sal-top"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-sal-body"></div></div></div>`);
-  v24AddPage('packaging','pk-accounts','👥 حسابات العملاء',pkRenderAccounts,`<div class="p-content"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pk-acc-add" onclick="pkNewAcct('acc')">➕ حركة (قبض / مبيعة)</button></div><div id="pk-acc-form"></div><div class="v24-kpis" id="pk-acc-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-acc-list"></div></div><div id="pk-acc-stm"></div></div>`);
+  v24AddPage('packaging','pk-accounts','👥 حسابات العملاء',pkRenderAccounts,`<div class="p-content"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pk-acc-add" onclick="pkNewAcct('acc')">➕ حركة (قبض / مبيعة)</button><button class="btn" id="pk-cust-add" onclick="pkNewCustomer()">👤 عميل جديد</button></div><div id="pk-acc-form"></div><div class="v24-kpis" id="pk-acc-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-acc-list"></div></div><div id="pk-acc-stm"></div></div>`);
   v24AddPage('packaging','pk-stock','📦 مخزن الكوفير',pkRenderStock,`<div class="p-content"><div class="v24-warn">مخزن الكوفير مستقل عن مخزون مصنع الحقن. الرصيد = رصيد أول المدة + الإضافات − الصرف (والتقييم بالمتوسط المتحرك).</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><select id="pks-g" onchange="pkRenderStock()" style="padding:6px 10px"></select><input id="pks-q" placeholder="🔍 بحث بالاسم" oninput="pkRenderStock()" style="padding:6px 10px"><label style="font-size:12px"><input type="checkbox" id="pks-nz" onchange="pkRenderStock()"> الأصناف برصيد فقط</label><button class="btn btn-primary" id="pks-open" onclick="pkOpeningForm()">📋 رصيد أول المدة</button><button class="btn btn-primary" id="pks-mv" onclick="pkMoveNew()">➕ حركة مخزن</button><button class="btn" id="pks-add" onclick="pkNewItem()">➕ صنف جديد</button></div><div id="pks-form"></div><div class="v24-kpis" id="pks-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pks-body"></div></div><div id="pks-card"></div><div id="pks-recent" style="margin-top:10px"></div></div>`);
   v24AddPage('packaging','pk-purch','🧾 فواتير الشراء',pkRenderPurch,`<div class="p-content"><div class="v24-warn">كل فاتورة شراء بتضيف أصنافها للمخزن تلقائيًا، وتسجّل المدفوع كمصروف في خزنة الكوفير (اختياري). المشتريات القديمة اللي اتسددت قبل كده موجودة في الخزنة — متدخلهاش تاني هنا إلا لو عايز تضيف أصنافها للمخزن عن طريق «حركة مخزن» بدل الفاتورة.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pkp-filter"></span><button class="btn btn-primary" id="pkp-add" onclick="pkPurchNew()">➕ فاتورة شراء</button></div><div id="pkp-form"></div><div class="v24-kpis" id="pkp-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pkp-body"></div></div></div>`);
   v24AddPage('packaging','pk-pricing','🧮 تسعير الكوفير',pkRenderPricing,`<div class="p-content"><div class="v24-warn">السعر = (مكونات الكوفير من متوسط سعر الشراء في المخزن + الكرتونة + كيس التغليف + العمالة) × (1 + هامش الربح). أي تغيير في أسعار الشراء بيتحسب تلقائيًا.</div><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pkpc-add" onclick="pkNewPricing()">➕ تسعيرة جديدة</button></div><div id="pkpc-cfg" style="margin-bottom:10px"></div><div id="pkpc-form"></div><div id="pkpc-body"></div></div>`);
@@ -10520,6 +10668,7 @@ deleteUser=async function(id){
   v24AddPage('finance','custody','👛 العُهد',v24RenderCustody,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">الصرف للشخص بيتسجل من الخزينة بند «عهدة (صرف لشخص)». هنا بتسجّل مصروفاته بالإيصالات، والباقي نقدًا بيرجع بند «تسوية / رد عهدة».</p><div class="v24-kpis" id="cus-kpis"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="cus-body"></div></div></div>`);
   v24AddPage('finance','owners','👤 حسابات الملاك',v24RenderOwners,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">كل مالك: كام سحب وكام دخّل في الخزنة. المصدر بنود الخزينة «سحب مالك / أرباح» و«رأس مال / إيداع مالك» وغيرها من بنود الملاك، بحسب اسم المالك.</p><div style="margin-bottom:10px"><select id="own-year" onchange="v24RenderOwners()" style="padding:6px 10px"></select></div><div class="v24-kpis" id="own-kpis"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="own-body"></div></div></div>`);
   v24AddPage('finance','openbal','📌 أرصدة افتتاحية 2025',v24RenderOpenBal,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">سجّل رصيد كل عميل ومورد ومالك منقول من سنة 2025. بيظهر في كشف الحساب باسم «رصيد افتتاحي منقول من 2025».</p><div id="ob-body"></div></div>`);
+  v24AddPage('finance','reroute','🔀 تصحيح توجيه الحركات',v24RenderReroute,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">بينقل حركات عملاء التعبئة والتغليف (أحمد مصطفى، اسلام سليمان/سليمان بلاست، محمد صلاح/زاد، الشيف مصطفى) وبيع الكراتين من خزينة الحقن لأماكنها الصح، من غير ما تعيد أي شغل.</p><div id="rr-body"></div></div>`);
   v24AddPage('finance','obligations','📆 الالتزامات الدورية',v24RenderObligations,`<div class="p-content"><div style="margin-bottom:10px"><button class="btn btn-primary v24-write" onclick="v24EditObligation()">➕ التزام جديد</button></div><div id="obl-alert"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="obl-body"></div></div></div>`);
   v24AddPage('finance','reconcile','🔍 مطابقة الكشوف',()=>{ if(!document.getElementById('rec-party').options.length) v24RecParties(); },`<div class="p-content"><div class="v24-card"><div class="form-row"><div class="form-group"><label>النوع</label><select id="rec-kind" onchange="v24RecParties()"><option value="client">عميل (دفعاته)</option><option value="supplier">مورد (سداداتنا له)</option></select></div><div class="form-group"><label>الطرف</label><select id="rec-party"></select></div></div>
   <div class="form-row"><div class="form-group"><label>من تاريخ (اختياري)</label><input type="date" id="rec-from"></div><div class="form-group"><label>إلى تاريخ (اختياري)</label><input type="date" id="rec-to"></div></div>
