@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 29-10 • كشف الغسيل</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 29-10 • نسخة كاملة</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -10589,6 +10589,19 @@ function v24WashRecon(year){
   <table class="v24-table"><thead><tr><th>الشهر</th><th>مدفوعات الخزنة (الكشف)</th><th>في صفحة التكاليف</th><th>الفرق</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><th>الإجمالي</th><th>${fmt(Math.round(tT))}</th><th>${fmt(Math.round(tC))}</th><th>${fmt(Math.round(tC-tT))}</th></tr></tfoot></table>
   <div style="font-size:11px;color:#888">لو فيه فرق: يا إما قيمة اتكتبت يدوي في صفحة التكاليف (بتظهر باللون الأصفر)، يا إما حركة خزنة مش محسوبة في الكشف.</div></details>`;
 }
+
+
+/* ===== النسخة الاحتياطية الكاملة: كانت بتحفظ الصيانة والإنتاج بس — دلوقتي بتشمل الخزنة والمبيعات والتعبئة والتغليف وكل شيء ===== */
+exportData=function(){
+  const data={equipment,workOrders,parts,pmSchedule,production,technicians,fixedCosts,variableCosts,materialPrices,productWeights,lockedMonths,customTargets,nextId,exportDate:new Date().toISOString()};
+  const all={};
+  try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(!k||!k.startsWith('saimd_')) continue; if(/user|pass|token|session|snooze|last_backup|auth|pin/i.test(k)) continue; try{ all[k.slice(6)]=JSON.parse(localStorage.getItem(k)); }catch(e){} } }catch(e){}
+  data.fullData=all;
+  const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='سايمد_backup_كامل_'+new Date().toISOString().split('T')[0]+'.json'; a.click();
+  localStorage.setItem('saimd_last_backup',String(Date.now())); localStorage.removeItem('saimd_backup_snooze');
+};
 
 // ================= v24.2 — Firebase Authentication (Email/Password) + قائمة مصرّح لهم =================
 // كل مستخدم له حساب سحابة بإيميل تركيبي: <username>@saimd-app.com (+ .v<n> لو المدير أعاد تعيين كلمة سره).
