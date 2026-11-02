@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 29-10 • تطبيق التصحيحات</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 02-11 • القوائم المالية</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -6459,7 +6459,8 @@ function renderPL(f, label){
             <thead><tr><th>البيان</th><th style="text-align:left">المبلغ</th><th style="text-align:left">%</th></tr></thead>
             <tbody>
               ${row('إيرادات المبيعات',f.salesTotal,false,true,'var(--c-success)')}
-              ${row('إجمالي الإيرادات',f.salesTotal,false,true,'var(--c-success)',true)}
+              ${f.otherIncome>0?row('إيرادات أخرى (مبيعات نقدية وتحصيلات من الخزينة)',f.otherIncome,true,false,'var(--c-success)'):''}
+              ${row('إجمالي الإيرادات',f.salesTotal+(f.otherIncome||0),false,true,'var(--c-success)',true)}
             </tbody>
           </table>
         </div>
@@ -6528,7 +6529,7 @@ function renderPL(f, label){
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <div>
             <div style="font-size:14px;font-weight:700">${f.netProfit>=0?'✅ صافي الربح':'❌ صافي الخسارة'}</div>
-            <div style="font-size:12px;color:var(--c-muted)">مجمل الربح − الناولون − المصاريف التشغيلية</div>
+            <div style="font-size:12px;color:var(--c-muted)">مجمل الربح − الناولون − المصاريف التشغيلية (شاملة الصيانة) + الإيرادات الأخرى</div>
           </div>
           <div style="text-align:left">
             <div style="font-size:26px;font-weight:700;color:${f.netProfit>=0?'var(--c-success)':'var(--c-danger)'}">${fmt(Math.abs(Math.round(f.netProfit)))} ج.م</div>
@@ -6629,7 +6630,8 @@ function renderCF(f, label){
         <table style="width:100%">
           <tbody>
             ${row('تحصيلات من العملاء (دفعات مسجلة)',f.cashIn_collected,true,false,'var(--c-success)')}
-            ${row('إجمالي التدفقات الداخلة',f.cashIn_collected,false,true,'var(--c-success)')}
+            ${f.cashIn_other>0?row('مبيعات نقدية وإيرادات أخرى (من الخزينة)',f.cashIn_other,true,false,'var(--c-success)'):''}
+            ${row('إجمالي التدفقات الداخلة',f.cashIn_collected+(f.cashIn_other||0),false,true,'var(--c-success)')}
           </tbody>
         </table>
       </div>
@@ -6643,8 +6645,9 @@ function renderCF(f, label){
             ${row('ناولون / نقل (مدفوع فعليًا)',f.cashOut_handling,true,false,'var(--c-danger)','out')}
             ${row('تكاليف ثابتة (رواتب وإيجار وغيره)',f.cashOut_fixed,true,false,'var(--c-danger)','out')}
             ${row('فواتير الكهرباء',f.cashOut_elec,true,false,'var(--c-danger)','out')}
+            ${f.cashOut_maint>0?row('صيانة (مدفوعة من الخزينة)',f.cashOut_maint,true,false,'var(--c-danger)','out'):''}
             ${f.periodInterest>0?row('فوائد القروض المدفوعة',f.periodInterest,true,false,'var(--c-danger)','out'):''}
-            ${row('إجمالي التدفقات الخارجة',f.cashOut_pur+f.cashOut_handling+f.cashOut_fixed+f.cashOut_elec+f.periodInterest,false,true,'var(--c-danger)','out')}
+            ${row('إجمالي التدفقات الخارجة',f.cashOut_total,false,true,'var(--c-danger)','out')}
           </tbody>
         </table>
       </div>
@@ -6662,6 +6665,16 @@ function renderCF(f, label){
           </div>
         </div>
       </div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="card-header"><h3>🏦 أنشطة التمويل وأخرى (من الخزينة)</h3></div>
+      <div class="card-body" style="padding:0"><table style="width:100%"><tbody>
+        ${Object.entries(f.finInRows||{}).map(([k,v])=>row(k,v,true,false,'var(--c-success)')).join('')}
+        ${Object.entries(f.finOutRows||{}).map(([k,v])=>row(k,v,true,false,'var(--c-danger)','out')).join('')}
+        ${row('صافي التمويل وأخرى',(f.finIn||0)-(f.finOut||0),false,true,((f.finIn||0)-(f.finOut||0))>=0?'var(--c-success)':'var(--c-danger)')}
+        ${row('تسوية: الإيجار والرواتب والكهرباء (المقدّر في قائمة التكاليف ناقص الفعلي المدفوع من الخزينة)',f.estAdj||0,true,false,'inherit')}
+        ${row('صافي حركة الخزينة في الفترة (يطابق صفحة الخزينة)',f.totalCashMove,false,true,f.totalCashMove>=0?'var(--c-success)':'var(--c-danger)',true)}
+      </tbody></table></div>
     </div>
     <div style="font-size:11px;color:var(--c-muted);margin-top:12px;padding:10px;background:var(--c-bg);border-radius:var(--r)">
       ⚠️ ملاحظة: التدفق النقدي مبني على الدفعات المسجلة في النظام فعلياً. المبيعات الآجلة غير المحصّلة لا تُدرج كتدفق داخل حتى يتم تسجيل دفعتها.
@@ -9027,6 +9040,39 @@ function v24CostResetOv(){
   const ov={...v24Cfg('costOverride',{})}; Object.keys(ov).forEach(k=>{ if(k.split('|')[1]===y) delete ov[k]; }); v24SetCfg('costOverride',ov); renderCosts();
 }
 
+
+// ---------- القوائم المالية: الصيانة + الإيرادات الأخرى + التمويل والأخرى + تسوية مع الخزينة ----------
+(function(){
+  const _cf=calcFinancials;
+  calcFinancials=function(){
+    const f=_cf.apply(this,arguments); const {year,months}=f;
+    const inP=t=>t&&t.date&&finDateInPeriod(t.date,year,months);
+    const tin=treasury.filter(t=>t.type==='in'&&inP(t)), tout=treasury.filter(t=>t.type==='out'&&inP(t));
+    const sum=a=>a.reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const maint=sum(tout.filter(t=>t.category===V24_MAINT_CAT));
+    const otherIncome=sum(tin.filter(t=>t.category==='إيرادات أخرى'));
+    const finInRows={}; tin.filter(t=>t.category!=='إيرادات أخرى').forEach(t=>{ const k=t.category||'أخرى'; finInRows[k]=(finInRows[k]||0)+(Number(t.amount)||0); });
+    const OP=new Set(['ناولون / نقل',V24_OPEX_CAT,'مصاريف إدارية ومكتبية','بوفيه',V24_MAINT_CAT,'إيجار','مرتبات وأجور','كهرباء ومياه وغاز']);
+    const finOutRows={}; tout.filter(t=>!OP.has(t.category)).forEach(t=>{ const k=t.category||'أخرى'; finOutRows[k]=(finOutRows[k]||0)+(Number(t.amount)||0); });
+    const actualEst=sum(tout.filter(t=>t.category==='إيجار'||t.category==='مرتبات وأجور'||t.category==='كهرباء ومياه وغاز'));
+    const lineSum=V24_COST_LINES.reduce((s,l)=>s+(f.opexLines[l]||0),0);
+    const estimated=(f.totalOpex-lineSum)+f.cashOut_elec;
+    // الصيانة في المصاريف التشغيلية وقائمة الدخل
+    f.maint=maint; f.opexLines=Object.assign({},f.opexLines); if(maint>0) f.opexLines['صيانة']=maint;
+    f.cashOut_fixed_only=f.cashOut_fixed; f.totalOpex+=maint; f.otherIncome=otherIncome;
+    f.netProfit=f.netProfit+otherIncome-maint; f.netMargin=f.salesTotal>0?f.netProfit/f.salesTotal:0;
+    // التدفق
+    f.cashIn_other=otherIncome; f.cashOut_maint=maint;
+    f.cashOut_total=f.cashOut_pur+f.cashOut_handling+f.cashOut_fixed_only+f.cashOut_elec+maint+f.periodInterest;
+    f.netCashFlow=f.cashIn_collected+otherIncome-f.cashOut_total;
+    f.finInRows=finInRows; f.finOutRows=finOutRows;
+    f.finIn=Object.values(finInRows).reduce((a,b)=>a+b,0); f.finOut=Object.values(finOutRows).reduce((a,b)=>a+b,0);
+    f.estAdj=estimated-actualEst; // تقدير الإيجار/الرواتب/الكهرباء ناقص الفعلي من الخزينة
+    f.totalCashMove=f.netCashFlow+f.finIn-f.finOut+f.estAdj;
+    return f;
+  };
+})();
+
 // ================= v24 — تشغيل: ناولون، نقطة تعادل، موثوقية، جرد، لوحة =================
 const v24Sum=(a,f)=>a.reduce((s,x)=>s+(f(x)||0),0);
 const v24YM=d=>(d||'').slice(0,7);
@@ -10669,6 +10715,72 @@ function v24FxUndo(){
   saveAll(); DB.save('pkAcct',V24D.pkAcct); DB.save('pkLedger',V24D.pkLedger); v24RenderFix();
 }
 
+
+/* ===== فواتير عملاء التعبئة (من كشوف 22/9 و5/10): بمعاينة وتراجع، ومش بيمس أي حاجة موجودة ===== */
+const V24_PKINV={id:'inv-2026-11-01',cust:{
+ 'برجر شوب':{sheet:['2026-10-19',9935],inv:[
+  ['2026-07-30',7020,'كوفير 2X1 مطبوع 6×1170'],
+  ['2026-08-08',17910,'كوفير 2X1 مطبوع 11×1170 + كوفير 4X1 مطبوع 4×1260'],
+  ['2026-08-16',13200,'كوفير 2X1 مطبوع 11×1200'],
+  ['2026-09-08',4520,'كوفير 4x1 كيس شفاف 2×1210 + كوفير 2x1 مط 2×1050'],
+  ['2026-09-13',14225,'كوفير 2X1 مطبوع 5×1200 + كوفير 4X1 مطبوع 7×1175'],
+  ['2026-09-22',14275,'كوفير 2X1 مطبوع 7×1200 + كوفير 4X1 مط 5×1175'],
+  ['2026-10-01',1170,'كوفير 2X1 مط 1×1170'],
+  ['2026-10-19',18750,'كوفير 2X1 مطبوع 15×1250']]},
+ 'بيتزا بارتي':{sheet:['2026-09-24',131680],inv:[
+  ['2026-07-30',43050,'كوفير 42×1025'],
+  ['2026-08-17',31400,'كوفير 16×1025 + بالة منديل سفرة 5000 10×1500'],
+  ['2026-09-06',21500,'كوفير 20×1075'],
+  ['2026-09-13',76500,'كوفير 60×1025 + بالة منديل سفرة 5000 10×1500'],
+  ['2026-09-24',32800,'كوفير 32×1025']]},
+ 'هارت اتاك دمياط':{sheet:['2026-09-17',8110],inv:[
+  ['2026-08-02',11800,'كوفير 3x1 10×1180'],
+  ['2026-08-10',11800,'كوفير 3x1 10×1180'],
+  ['2026-08-27',12150,'كوفير 3x1 10×1215'],
+  ['2026-09-17',7290,'كوفير 3x1 6×1215']]}}};
+function v24PiBal(c,upto,extra){
+  let t=0; const rows=V24D.pkAcct.filter(a=>a.customer===c).map(a=>[a.date,a.kind,+a.amount||0]).concat(extra||[]);
+  rows.forEach(([d,k,m])=>{ if(upto&&d>upto) return; if(k==='opening'||k==='sale_credit') t+=m; else if(k==='receipt'||k==='return') t-=m; });
+  return t;
+}
+function v24PiDay(a,b){ return Math.abs((new Date(a)-new Date(b))/864e5); }
+function v24PiPlan(){
+  const out=[]; const log=(v24Cfg('pkInvLog',[])||[]).filter(l=>l.id===V24_PKINV.id&&!l.undone);
+  Object.entries(V24_PKINV.cust).forEach(([c,o])=>{
+    const rows=o.inv.map(([d,m,n],i)=>{ const key=V24_PKINV.id+':'+c+':'+i;
+      const ex=V24D.pkAcct.find(a=>a.importKey===key)||V24D.pkAcct.find(a=>a.customer===c&&(a.kind==='sale_credit'||a.kind==='sale_cash')&&Math.abs((+a.amount||0)-m)<0.01&&v24PiDay(a.date,d)<=3);
+      return {c,d,m,n,key,exists:!!ex}; });
+    const add=rows.filter(r=>!r.exists).map(r=>[r.d,'sale_credit',r.m]);
+    out.push({c,rows,sheet:o.sheet,before:v24PiBal(c,o.sheet[0]),after:v24PiBal(c,o.sheet[0],add),cur:v24PiBal(c),curAfter:v24PiBal(c,null,add)});
+  });
+  return {cust:out,logged:log.length>0};
+}
+function v24RenderPkInv(){
+  const el=document.getElementById('pi-body'); if(!el) return;
+  const p=v24PiPlan(); const nAdd=p.cust.reduce((s,x)=>s+x.rows.filter(r=>!r.exists).length,0);
+  el.innerHTML=`<div class="v24-warn">هتتضاف فواتير بيع آجل بس (مش بتأثر في الخزنة). مفيش حاجة موجودة بتتعدل أو بتتحذف. خد نسخة احتياطية الأول، وفي زرار تراجع.</div>`+
+  p.cust.map(x=>{ const diff=x.after-x.sheet[1]; return `<div class="card" style="margin-top:10px"><div class="card-body" style="padding:10px;overflow:auto"><b>${v24Esc(x.c)}</b>
+  <table class="v24-table" style="margin-top:6px"><thead><tr><th>التاريخ</th><th>المبلغ</th><th>الأصناف</th><th>الحالة</th></tr></thead><tbody>${x.rows.map(r=>`<tr><td>${r.d}</td><td>${fmt(r.m)}</td><td style="font-size:11px">${v24Esc(r.n)}</td><td>${r.exists?'موجودة':'<b style="color:#0f6e56">هتتضاف</b>'}</td></tr>`).join('')}</tbody></table>
+  <div style="font-size:12px;margin-top:6px">رصيد الكشف في ${x.sheet[0]}: <b>${fmt(x.sheet[1])}</b> | رصيد البرنامج بعد الإضافة: <b>${fmt(x.after)}</b> | الفرق: <b style="color:${Math.abs(diff)<1?'#2e7d32':'#c62828'}">${Math.abs(diff)<1?'مطابق ✔':fmt(diff)}</b><br>رصيد البرنامج الحالي (كل التواريخ): ${fmt(x.cur)} ← ${fmt(x.curAfter)}</div></div></div>`; }).join('')+
+  `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="exportData()">💾 نسخة احتياطية كاملة</button><button class="btn btn-primary" onclick="v24PiApply()" ${nAdd?'':'disabled'}>✅ إضافة الفواتير (${nAdd})</button>${p.logged?'<button class="btn" style="color:var(--c-danger)" onclick="v24PiUndo()">↩️ تراجع</button>':''}</div>`;
+}
+function v24PiApply(){
+  if(!v24Can('write')){ alert('مفيش صلاحية تعديل'); return; }
+  const p=v24PiPlan(); const rows=p.cust.flatMap(x=>x.rows.filter(r=>!r.exists)); if(!rows.length) return;
+  if(!confirm(`هتتضاف ${rows.length} فاتورة بيع آجل. عملت نسخة احتياطية؟ نكمل؟`)) return;
+  let id=pkNextAcctId(); const ids=[];
+  rows.forEach(r=>{ V24D.pkAcct.push({id:id,date:r.d,customer:r.c,kind:'sale_credit',amount:r.m,ref:'',note:r.n+' — من كشف الحساب',createdBy:v24Who(),importKey:r.key,importBatch:V24_PKINV.id}); ids.push(id++); });
+  DB.save('pkAcct',V24D.pkAcct);
+  const lg=(v24Cfg('pkInvLog',[])||[]).slice(); lg.push({id:V24_PKINV.id,at:new Date().toISOString(),ids}); v24SetCfg('pkInvLog',lg);
+  alert('اتضافت '+rows.length+' فاتورة.'); v24RenderPkInv();
+}
+function v24PiUndo(){
+  const lg=(v24Cfg('pkInvLog',[])||[]).slice(); const i=lg.map(l=>!l.undone).lastIndexOf(true); if(i<0) return;
+  if(!confirm('هتشيل الفواتير اللي اتضافت. متأكد؟')) return;
+  V24D.pkAcct=V24D.pkAcct.filter(a=>a.importBatch!==V24_PKINV.id); DB.save('pkAcct',V24D.pkAcct);
+  lg[i].undone=true; v24SetCfg('pkInvLog',lg); v24RenderPkInv();
+}
+
 // ================= v24.2 — Firebase Authentication (Email/Password) + قائمة مصرّح لهم =================
 // كل مستخدم له حساب سحابة بإيميل تركيبي: <username>@saimd-app.com (+ .v<n> لو المدير أعاد تعيين كلمة سره).
 // الدخول للبيانات مشروط بوجود وثيقة saimd_allow/<email> (يكتبها المدير) — تحميها قواعد firestore.rules.
@@ -10861,6 +10973,7 @@ deleteUser=async function(id){
   v24AddPage('packaging','pk-cost','🏦 خزنة الكوفير',pkRenderCost,`<div class="p-content"><div class="v24-warn">خزنة الكوفير مستقلة تمامًا عن خزينة مصنع الحقن: مصروفات الموردين والمرتبات والإيجار وتحصيلات العملاء.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pk-cost-filter"></span><button class="btn btn-primary" id="pk-cost-add" onclick="pkNewLed()">➕ حركة جديدة</button></div><div id="pk-form2"></div><div class="v24-kpis" id="pk-cost-kpis"></div><div id="pk-cost-sup"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-cost-body"></div></div></div>`);
   v24AddPage('packaging','pk-sales','🧾 المبيعات',pkRenderSales,`<div class="p-content"><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><span id="pk-sal-filter"></span><select id="pk-sc" onchange="pkRenderSales()" style="padding:6px 10px"><option value="">كل العملاء</option></select><button class="btn btn-primary" id="pk-sal-add" onclick="pkNewAcct('sales')">➕ مبيعة جديدة</button></div><div id="pk-sal-form"></div><div class="v24-kpis" id="pk-sal-kpis"></div><div id="pk-sal-top"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-sal-body"></div></div></div>`);
   v24AddPage('packaging','pk-accounts','👥 حسابات العملاء',pkRenderAccounts,`<div class="p-content"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pk-acc-add" onclick="pkNewAcct('acc')">➕ حركة (قبض / مبيعة)</button><button class="btn" id="pk-cust-add" onclick="pkNewCustomer()">👤 عميل جديد</button></div><div id="pk-acc-form"></div><div class="v24-kpis" id="pk-acc-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-acc-list"></div></div><div id="pk-acc-stm"></div></div>`);
+  v24AddPage('packaging','pk-inv','🧾 فواتير من كشوف العملاء',v24RenderPkInv,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">فواتير بيع كشوف برجر شوب وبيتزا بارتي وهارت اتاك دمياط (من 30/7 لحد 19/10). بمعاينة قبل الإضافة وزرار تراجع.</p><div id="pi-body"></div></div>`);
   v24AddPage('packaging','pk-stock','📦 مخزن الكوفير',pkRenderStock,`<div class="p-content"><div class="v24-warn">مخزن الكوفير مستقل عن مخزون مصنع الحقن. الرصيد = رصيد أول المدة + الإضافات − الصرف (والتقييم بالمتوسط المتحرك).</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><select id="pks-g" onchange="pkRenderStock()" style="padding:6px 10px"></select><input id="pks-q" placeholder="🔍 بحث بالاسم" oninput="pkRenderStock()" style="padding:6px 10px"><label style="font-size:12px"><input type="checkbox" id="pks-nz" onchange="pkRenderStock()"> الأصناف برصيد فقط</label><button class="btn btn-primary" id="pks-open" onclick="pkOpeningForm()">📋 رصيد أول المدة</button><button class="btn btn-primary" id="pks-mv" onclick="pkMoveNew()">➕ حركة مخزن</button><button class="btn" id="pks-add" onclick="pkNewItem()">➕ صنف جديد</button><button class="btn" id="pks-sheet" onclick="pkLoadSheetItems()">📥 تحميل أصناف الشيت (92)</button></div><div id="pks-form"></div><div class="v24-kpis" id="pks-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pks-body"></div></div><div id="pks-card"></div><div id="pks-recent" style="margin-top:10px"></div></div>`);
   v24AddPage('packaging','pk-purch','🧾 فواتير الشراء',pkRenderPurch,`<div class="p-content"><div class="v24-warn">كل فاتورة شراء بتضيف أصنافها للمخزن تلقائيًا، وتسجّل المدفوع كمصروف في خزنة الكوفير (اختياري). المشتريات القديمة اللي اتسددت قبل كده موجودة في الخزنة — متدخلهاش تاني هنا إلا لو عايز تضيف أصنافها للمخزن عن طريق «حركة مخزن» بدل الفاتورة.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pkp-filter"></span><button class="btn btn-primary" id="pkp-add" onclick="pkPurchNew()">➕ فاتورة شراء</button></div><div id="pkp-form"></div><div class="v24-kpis" id="pkp-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pkp-body"></div></div></div>`);
   v24AddPage('packaging','pk-pricing','🧮 تسعير الكوفير',pkRenderPricing,`<div class="p-content"><div class="v24-warn">السعر = (مكونات الكوفير من متوسط سعر الشراء في المخزن + الكرتونة + كيس التغليف + العمالة) × (1 + هامش الربح). أي تغيير في أسعار الشراء بيتحسب تلقائيًا.</div><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pkpc-add" onclick="pkNewPricing()">➕ تسعيرة جديدة</button></div><div id="pkpc-cfg" style="margin-bottom:10px"></div><div id="pkpc-form"></div><div id="pkpc-body"></div></div>`);
