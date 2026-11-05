@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 05-11 • بيع الهالك</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 05-11 • حسابات الخزنة</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -1966,6 +1966,7 @@ function v24StampNew(key,cur,prev){
     if(r.method==='شيك'){ r.chequeStatus=ex.chequeStatus||'معلّق'; r.dueDate=ex.dueDate||''; }
     if(ex.needsApproval) r.needsApproval=true;
     if(ex.party) r.party=ex.party;
+    if(V24.acct) r.account=V24.acct;
     V24.lastStamped={key,id:r.id};
   });
 }
@@ -10839,6 +10840,199 @@ function v24ScDel(id){
   if(s.refType==='treasury') treasury=treasury.filter(r=>!(r.scrapId===id&&r.wasteSale));
   else purchaseReturns=purchaseReturns.filter(r=>!(r.scrapId===id&&r.wasteSale));
   v24SetCfg('scrapSales',lg.filter(x=>x.id!==id)); saveAll(); v24ScRender();
+}
+
+
+/* ===== حسابات الخزنة (كاش / بنوك / محافظ): خانة إلزامية في كل سند + أرصدة + تحويل بين الحسابات ===== */
+const V24_TA_LEGACY='غير محدد (قبل التفعيل)';
+function v24TaList(){ return v24TaL('inj'); }
+function v24TaOpts(){ return '<option value="">اختر الحساب...</option>'+v24TaList().map(a=>`<option value="${v24Esc(a)}">${v24Esc(a)}</option>`).join(''); }
+function v24TaEnsure(prefix){
+  const m=document.getElementById(prefix+'-method'); if(!m) return;
+  let s=document.getElementById(prefix+'-account');
+  if(!s){ const row=m.closest('.form-row')||m.closest('.form-group'); const d=document.createElement('div'); d.className='form-group'; d.innerHTML=`<label>الحساب * <span style="font-size:11px;color:#c62828">(إلزامي — السند اتعمل من أنهي حساب)</span></label><select id="${prefix}-account"></select>`; row.parentNode.insertBefore(d,row); s=d.querySelector('select'); }
+  s.innerHTML=v24TaOpts(); s.value='';
+}
+(function(){
+  [['openPaymentModal','pay'],['openSupplierPaymentModal','suppay'],['openTreasuryModal','tre']].forEach(([fn,p])=>{ const o=window[fn]; if(typeof o!=='function') return; window[fn]=function(){ v24TaEnsure(p); const r=o.apply(this,arguments); v24TaEnsure(p); return r; }; });
+  function wrap(fn,p){ const o=window[fn]; if(typeof o!=='function') return;
+    window[fn]=function(){
+      if(p==='tre'){ const cat=(document.getElementById('tre-category')||{}).value; const a=(document.getElementById('tre-account')||{}).value;
+        if(!a){ alert('اختر الحساب اللي الحركة دي اتعملت منه (إلزامي)'); return; }
+        if(cat==='تحصيل من عميل'){ v24TaEnsure('pay'); document.getElementById('pay-account').value=a; }
+        if(cat==='سند دفع لمورد'){ v24TaEnsure('suppay'); document.getElementById('suppay-account').value=a; } }
+      const el=document.getElementById(p+'-account'); const a2=el?el.value:'';
+      if(!a2){ alert('اختر الحساب اللي السند ده اتعمل منه (إلزامي)'); return; }
+      V24.acct=a2; let r; try{ r=o.apply(this,arguments); } catch(e){ V24.acct=''; throw e; }
+      if(r&&typeof r.then==='function') return r.finally(()=>{ V24.acct=''; });
+      V24.acct=''; return r; };
+  }
+  wrap('savePayment','pay'); wrap('saveSupplierPayment','suppay'); wrap('saveTreasuryEntry','tre');
+  const _g=getTreasuryLedger; getTreasuryLedger=function(){ const L=_g.apply(this,arguments); L.forEach(e=>{ e.account=(e.rec&&e.rec.account)||V24_TA_LEGACY; }); return L; };
+  const _r=renderTreasuryPage; renderTreasuryPage=function(){ const r=_r.apply(this,arguments); try{ v24TaRender('inj'); }catch(e){ console.warn('treacc',e); } return r; };
+})();
+
+const V24_TA_SCOPES={
+  inj:{key:'inj',title:'حسابات خزنة الحقن',listKey:'treAccounts',trKey:'treTransfers',panel:'tre-acc-panel',host:'page-treasury',
+    ledger:()=>getTreasuryLedger(), opening:()=>((treasurySettings&&treasurySettings.opening)||0), render:()=>v24TaRender('inj')},
+  pk:{key:'pk',title:'حسابات خزنة التعبئة والتغليف',listKey:'pkTreAccounts',trKey:'pkTreTransfers',panel:'pk-acc-panel',host:'page-pk-cost',
+    ledger:()=>{ const L=[]; (V24D.pkLedger||[]).forEach(r=>L.push({id:'l'+r.id,date:r.date||'',type:r.kind==='revenue'?'in':'out',category:r.category||'',party:'',desc:r.desc||'',amount:Number(r.amount)||0,ref:r.ref||'',account:r.account||V24_TA_LEGACY}));
+      (V24D.pkAcct||[]).forEach(a=>{ if(a.kind==='receipt'||a.kind==='sale_cash') L.push({id:'a'+a.id,date:a.date||'',type:'in',category:a.kind==='receipt'?'قبض من عميل':'بيع نقدي',party:a.customer||'',desc:a.note||'',amount:Number(a.amount)||0,ref:a.ref||'',account:a.account||V24_TA_LEGACY}); });
+      return L; }, opening:()=>0, render:()=>v24TaRender('pk')}
+};
+function v24TaAllRaw(k){ const l=v24Cfg(V24_TA_SCOPES[k].listKey,null); return Array.isArray(l)&&l.length?l:['الخزنة (كاش)','البنك الأهلي','بنك مصر','CIB','محفظة إلكترونية']; }
+function v24TaL(k){ const off=v24TaOff(k); return v24TaAllRaw(k).filter(a=>!off.includes(a)); }
+function v24TaOff(k){ const l=v24Cfg(V24_TA_SCOPES[k].listKey+'Off',[]); return Array.isArray(l)?l:[]; }
+function v24TaAll(k){ return v24TaAllRaw(k); }
+function v24TaT(k){ return (v24Cfg(V24_TA_SCOPES[k].trKey,[])||[]); }
+function v24TaBalances(k){
+  k=k||'inj'; const S=V24_TA_SCOPES[k]; const names=[V24_TA_LEGACY,...v24TaAll(k)]; const b={}; names.forEach(n=>b[n]={in:0,out:0,tin:0,tout:0});
+  const g=n=>b[n]||(b[n]={in:0,out:0,tin:0,tout:0});
+  S.ledger().forEach(e=>{ const x=g(e.account); if(e.type==='in') x.in+=e.amount; else x.out+=e.amount; });
+  v24TaT(k).forEach(t=>{ g(t.from).tout+=+t.amount||0; g(t.to).tin+=+t.amount||0; });
+  Object.entries(b).forEach(([n,x])=>{ x.open=n===V24_TA_LEGACY?S.opening():0; x.bal=x.open+x.in-x.out+x.tin-x.tout; });
+  return b;
+}
+const v24TaSelMap={inj:null,pk:null};
+const v24TaQ=s=>JSON.stringify(s).replace(/"/g,'&quot;');
+function v24TaRender(k){
+  k=k||'inj'; const S=V24_TA_SCOPES[k]; const page=document.getElementById(S.host); if(!page) return;
+  let box=document.getElementById(S.panel);
+  if(!box){ box=document.createElement('div'); box.id=S.panel; const host=page.querySelector('.p-content')||page; host.insertBefore(box,host.firstChild); }
+  const b=v24TaBalances(k), list=v24TaAll(k), off=v24TaOff(k);
+  const names=Object.keys(b).filter(n=>n!==V24_TA_LEGACY||b[n].in||b[n].out||b[n].open||b[n].tin||b[n].tout);
+  const tot=names.reduce((s,n)=>s+b[n].bal,0); const w=v24Can('write');
+  const used=n=>b[n]&&(b[n].in||b[n].out||b[n].tin||b[n].tout);
+  const leg=b[V24_TA_LEGACY].bal;
+  box.innerHTML=`<div class="card" style="margin-bottom:12px"><div class="card-header"><h3>🏧 ${S.title}</h3></div><div class="card-body" style="padding:10px;overflow:auto">
+  <table class="v24-table"><thead><tr><th>الحساب</th><th>داخل</th><th>خارج</th><th>تحويلات / افتتاحي</th><th>الرصيد</th><th></th></tr></thead><tbody>
+  ${names.map(n=>`<tr><td><b>${v24Esc(n)}</b>${off.includes(n)?' <span style="font-size:10px;color:#c62828">(موقوف)</span>':''}</td><td>${fmt(Math.round(b[n].in))}</td><td>${fmt(Math.round(b[n].out))}</td><td>${fmt(Math.round(b[n].tin-b[n].tout+b[n].open))}</td><td style="font-weight:700;color:${b[n].bal<0?'#c62828':'#2e7d32'}">${fmt(Math.round(b[n].bal))}</td><td style="white-space:nowrap"><button class="btn" style="padding:2px 8px;font-size:11px" onclick="v24TaSelMap.${k}=${v24TaQ(n)};v24TaRender('${k}')">كشف</button>${w&&list.includes(n)&&!used(n)?` <button class="btn" style="padding:2px 7px;font-size:10px;color:var(--c-danger)" onclick="v24TaDelAcc('${k}',${v24TaQ(n)})">🗑</button>`:''}${w&&list.includes(n)&&used(n)?(off.includes(n)?` <button class="btn" style="padding:2px 7px;font-size:10px" onclick="v24TaToggle('${k}',${v24TaQ(n)})">▶ تفعيل</button>`:` <button class="btn" style="padding:2px 7px;font-size:10px" onclick="v24TaToggle('${k}',${v24TaQ(n)})">⏸ إيقاف</button>`):''}</td></tr>`).join('')}
+  <tr style="font-weight:700"><td>الإجمالي (رصيد الخزنة)</td><td></td><td></td><td></td><td>${fmt(Math.round(tot))}</td><td></td></tr></tbody></table>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${w?`<button class="btn btn-primary" onclick="v24TaOpenForm('${k}')">📌 أرصدة افتتاحية للحسابات</button><button class="btn" onclick="v24TaAddAcc('${k}')">➕ حساب جديد</button><button class="btn" onclick="v24TaTransferForm('${k}')">🔁 تحويل بين حسابين</button>`:''}</div>
+  <div id="${k}-acc-form"></div><div id="${k}-acc-stm"></div>
+  <div style="font-size:11px;color:#777;margin-top:6px">الحركات القديمة (قبل التفعيل) بتظهر في «${V24_TA_LEGACY}» ورصيدها الحالي ${fmt(Math.round(leg))}. «أرصدة افتتاحية» بتوزعه على الحسابات بحيث المجموع يساوي رصيد الخزنة وقت الإدخال. التحويلات والأرصدة الافتتاحية ما بتغيّرش إجمالي الخزنة ولا القوائم المالية.</div></div></div>`;
+  if(v24TaSelMap[k]) v24TaStatement(k,v24TaSelMap[k]);
+}
+function v24TaStatement(k,acc){
+  const S=V24_TA_SCOPES[k]; const rows=[];
+  S.ledger().filter(e=>e.account===acc).forEach(e=>rows.push({date:e.date,label:(e.category||'')+(e.party?' — '+e.party:'')+(e.desc?' — '+e.desc:''),inn:e.type==='in'?e.amount:0,out:e.type==='out'?e.amount:0}));
+  v24TaT(k).forEach(t=>{ const lb=t.opening?'رصيد افتتاحي':'تحويل'; if(t.from===acc) rows.push({date:t.date,label:lb+' إلى '+t.to+(t.note?' — '+t.note:''),inn:0,out:+t.amount,tid:t.id}); if(t.to===acc) rows.push({date:t.date,label:lb+' من '+t.from+(t.note?' — '+t.note:''),inn:+t.amount,out:0,tid:t.id}); });
+  rows.sort((a,b)=>(a.date||'').localeCompare(b.date||'')); let run=acc===V24_TA_LEGACY?S.opening():0; const w=v24Can('write');
+  document.getElementById(k+'-acc-stm').innerHTML=`<div style="margin-top:10px"><b>كشف حساب: ${v24Esc(acc)}</b> <button class="btn" style="padding:2px 8px;font-size:11px" onclick="v24TaSelMap.${k}=null;v24TaRender('${k}')">إغلاق</button></div><div style="max-height:360px;overflow:auto"><table class="v24-table"><thead><tr><th>التاريخ</th><th>البيان</th><th>داخل</th><th>خارج</th><th>الرصيد</th><th></th></tr></thead><tbody>${acc===V24_TA_LEGACY&&run?`<tr><td></td><td>رصيد أول المدة</td><td></td><td></td><td>${fmt(Math.round(run))}</td><td></td></tr>`:''}${rows.map(r=>{ run+=r.inn-r.out; return `<tr><td>${r.date}</td><td style="font-size:11px">${v24Esc(r.label)}</td><td>${r.inn?fmt(Math.round(r.inn)):''}</td><td>${r.out?fmt(Math.round(r.out)):''}</td><td>${fmt(Math.round(run))}</td><td>${r.tid&&w?`<button class="btn" style="padding:2px 7px;font-size:10px;color:var(--c-danger)" onclick="v24TaDelTr('${k}',${r.tid})">🗑</button>`:''}</td></tr>`; }).join('')||'<tr><td colspan="6" style="text-align:center;color:#888;padding:12px">لا توجد حركات</td></tr>'}</tbody></table></div>`;
+}
+function v24TaAddAcc(k){
+  const n=(prompt('اسم الحساب الجديد (مثلًا: بنك القاهرة، فودافون كاش):')||'').trim(); if(!n) return;
+  const l=v24TaAll(k).slice(); if(l.some(x=>v24Nz(x)===v24Nz(n))||n===V24_TA_LEGACY){ alert('الحساب ده موجود (ممكن يكون موقوف — فعّله من الجدول)'); return; }
+  l.push(n); v24SetCfg(V24_TA_SCOPES[k].listKey,l); v24TaRender(k);
+}
+function v24TaToggle(k,n){
+  const off=v24TaOff(k).slice(); const i=off.indexOf(n);
+  if(i>=0){ off.splice(i,1); v24SetCfg(V24_TA_SCOPES[k].listKey+'Off',off); v24TaRender(k); return; }
+  const bal=Math.round(v24TaBalances(k)[n].bal*100)/100;
+  if(bal!==0){ alert('الحساب لسه فيه رصيد '+fmt(bal)+'. حوّله لحساب تاني الأول (تحويل بين حسابين) وبعدين أوقفه.'); return; }
+  if(!confirm('إيقاف «'+n+'»؟ مش هيظهر في السندات الجديدة، وحركاته القديمة تفضل في كشفه.')) return;
+  off.push(n); v24SetCfg(V24_TA_SCOPES[k].listKey+'Off',off); if(v24TaSelMap[k]===n) v24TaSelMap[k]=null; v24TaRender(k);
+}
+function v24TaDelAcc(k,n){ if(!confirm('حذف الحساب «'+n+'»؟ (مفيهوش حركات)')) return; v24SetCfg(V24_TA_SCOPES[k].listKey,v24TaAll(k).filter(x=>x!==n)); if(v24TaSelMap[k]===n) v24TaSelMap[k]=null; v24TaRender(k); }
+function v24TaTransferForm(k){
+  const all=[V24_TA_LEGACY,...v24TaL(k)].map(a=>`<option value="${v24Esc(a)}">${v24Esc(a)}</option>`).join('');
+  document.getElementById(k+'-acc-form').innerHTML=`<div class="v24-card" style="margin-top:10px"><b>تحويل بين حسابين</b><div class="form-row"><div class="form-group"><label>التاريخ</label><input type="date" id="${k}-tt-date" value="${today()}"></div><div class="form-group"><label>من</label><select id="${k}-tt-from"><option value="">اختر...</option>${all}</select></div><div class="form-group"><label>إلى</label><select id="${k}-tt-to"><option value="">اختر...</option>${all}</select></div><div class="form-group"><label>المبلغ</label><input type="number" id="${k}-tt-amt" min="0" step="0.01"></div></div><div class="form-group"><label>ملاحظات</label><input id="${k}-tt-note"></div><button class="btn btn-primary" onclick="v24TaSaveTr('${k}')">💾 تسجيل التحويل</button> <button class="btn" onclick="document.getElementById('${k}-acc-form').innerHTML=''">إلغاء</button></div>`;
+}
+function v24TaSaveTr(k){
+  if(!v24Can('write')){ alert('مفيش صلاحية تعديل'); return; }
+  const g=id=>document.getElementById(k+'-'+id).value; const o={date:g('tt-date'),from:g('tt-from'),to:g('tt-to'),amount:+g('tt-amt')||0,note:g('tt-note').trim()};
+  if(!o.date||!o.from||!o.to){ alert('التاريخ وحساب التحويل من وإلى مطلوبين'); return; }
+  if(o.from===o.to){ alert('اختر حسابين مختلفين'); return; } if(!(o.amount>0)){ alert('أدخل مبلغ صحيح'); return; }
+  const lg=v24TaT(k).slice(); o.id=lg.reduce((m,x)=>Math.max(m,x.id),0)+1; lg.push(o); v24SetCfg(V24_TA_SCOPES[k].trKey,lg); v24TaRender(k);
+}
+function v24TaDelTr(k,id){ if(!v24Can('delete')){ alert('الحذف للمدير أو بصلاحية حذف'); return; } if(!confirm('حذف التحويل؟')) return; v24SetCfg(V24_TA_SCOPES[k].trKey,v24TaT(k).filter(x=>x.id!==id)); v24TaRender(k); }
+// ---- الأرصدة الافتتاحية: مجموعها لازم يساوي رصيد الخزنة (غير المحدد) وقت الإدخال ----
+function v24TaOpenForm(k){
+  const req=Math.round(v24TaBalances(k)[V24_TA_LEGACY].bal*100)/100, list=v24TaL(k);
+  document.getElementById(k+'-acc-form').innerHTML=`<div class="v24-card" style="margin-top:10px"><b>📌 الأرصدة الافتتاحية للحسابات</b>
+  <div style="font-size:12px;margin:6px 0">رصيد الخزنة الحالي (المطلوب توزيعه): <b>${fmt(req)}</b> ج.م — مجموع الأرصدة لازم يساويه.</div>
+  <div class="form-group"><label>تاريخ الرصيد</label><input type="date" id="${k}-ob-date" value="${today()}"></div>
+  ${list.map((a,i)=>`<div class="form-row"><div class="form-group"><label>${v24Esc(a)}</label><input type="number" step="0.01" id="${k}-ob-${i}" oninput="v24TaObCalc('${k}')" placeholder="0"></div></div>`).join('')}
+  <div id="${k}-ob-sum" style="font-size:12px;margin:6px 0"></div>
+  <button class="btn btn-primary" id="${k}-ob-btn" onclick="v24TaObSave('${k}')" disabled>💾 تسجيل الأرصدة</button> <button class="btn" onclick="document.getElementById('${k}-acc-form').innerHTML=''">إلغاء</button>
+  ${v24TaT(k).some(t=>t.opening)?`<button class="btn" style="color:var(--c-danger)" onclick="v24TaObUndo('${k}')">↩️ إلغاء الأرصدة الافتتاحية المسجلة</button>`:''}</div>`;
+  v24TaObCalc(k);
+}
+function v24TaObCalc(k){
+  const req=Math.round(v24TaBalances(k)[V24_TA_LEGACY].bal*100)/100, list=v24TaL(k);
+  const sum=list.reduce((s,a,i)=>s+(+document.getElementById(k+'-ob-'+i).value||0),0); const diff=Math.round((req-sum)*100)/100;
+  document.getElementById(k+'-ob-sum').innerHTML=`المجموع: <b>${fmt(sum)}</b> | المتبقي: <b style="color:${diff===0?'#2e7d32':'#c62828'}">${diff===0?'مطابق ✔':fmt(diff)}</b>`;
+  document.getElementById(k+'-ob-btn').disabled=!(diff===0&&req!==0);
+}
+function v24TaObSave(k){
+  if(!v24Can('write')){ alert('مفيش صلاحية تعديل'); return; }
+  const req=Math.round(v24TaBalances(k)[V24_TA_LEGACY].bal*100)/100, list=v24TaL(k), date=document.getElementById(k+'-ob-date').value;
+  const vals=list.map((a,i)=>[a,+document.getElementById(k+'-ob-'+i).value||0]); const sum=vals.reduce((s,x)=>s+x[1],0);
+  if(!date){ alert('حدد التاريخ'); return; } if(Math.abs(sum-req)>0.005){ alert('مجموع الأرصدة لازم يساوي رصيد الخزنة ('+fmt(req)+')'); return; }
+  if(vals.some(x=>x[1]<0)){ alert('الأرصدة الافتتاحية مينفعش تبقى سالبة'); return; }
+  if(!confirm('هتوزّع '+fmt(req)+' ج.م على الحسابات. نكمل؟')) return;
+  const lg=v24TaT(k).slice(); let id=lg.reduce((m,x)=>Math.max(m,x.id),0);
+  vals.filter(x=>x[1]>0).forEach(([a,m])=>lg.push({id:++id,date,from:V24_TA_LEGACY,to:a,amount:m,note:'رصيد افتتاحي',opening:true}));
+  v24SetCfg(V24_TA_SCOPES[k].trKey,lg); document.getElementById(k+'-acc-form').innerHTML=''; v24TaRender(k);
+}
+function v24TaObUndo(k){ if(!confirm('هتلغي كل الأرصدة الافتتاحية المسجلة وترجّع الرصيد لـ «غير محدد». متأكد؟')) return; v24SetCfg(V24_TA_SCOPES[k].trKey,v24TaT(k).filter(t=>!t.opening)); document.getElementById(k+'-acc-form').innerHTML=''; v24TaRender(k); }
+
+// ---- التعبئة والتغليف: خانة الحساب في فورم الحركة وفورم الحسابات ----
+(function(){
+  const selHtml=(id,sel,label)=>`<div class="form-group"><label>${label}</label><select id="${id}"><option value="">اختر الحساب...</option>${v24TaL('pk').map(a=>`<option value="${v24Esc(a)}" ${a===sel?'selected':''}>${v24Esc(a)}</option>`).join('')}</select></div>`;
+  const _lf=pkLedForm; pkLedForm=function(r){ const h=_lf.apply(this,arguments); const m='<button class="btn btn-primary" onclick="pkSaveLed()">'; return h.includes(m)?h.replace(m,'<div class="form-row">'+selHtml('pkl-account',(r&&r.account)||'','الحساب * (إلزامي — الحركة من أنهي حساب)')+'</div>'+m):h; };
+  const _af=pkAcctForm; pkAcctForm=function(r,back){ const h=_af.apply(this,arguments); const m='<button class="btn btn-primary" onclick="pkSaveAcct()">'; return h.includes(m)?h.replace(m,'<div class="form-row">'+selHtml('pka-account',(r&&r.account)||'','الحساب * (إلزامي للقبض والبيع النقدي)')+'</div>'+m):h; };
+  const _sl=pkSaveLed; pkSaveLed=function(){
+    const a=(document.getElementById('pkl-account')||{}).value; if(!a){ alert('اختر الحساب اللي الحركة دي اتعملت منه (إلزامي)'); return; }
+    const id=parseInt(v24v('pkl-id')); const n0=V24D.pkLedger.length; const mx=V24D.pkLedger.reduce((m,x)=>Math.max(m,x.id),0);
+    const r=_sl.apply(this,arguments); const rec=id?V24D.pkLedger.find(x=>x.id===id):(V24D.pkLedger.length>n0?V24D.pkLedger.find(x=>x.id>mx):null);
+    if(rec){ rec.account=a; DB.save('pkLedger',V24D.pkLedger); } return r; };
+  const _sa=pkSaveAcct; pkSaveAcct=function(){
+    const kind=v24v('pka-kind'); const a=(document.getElementById('pka-account')||{}).value; const need=kind==='receipt'||kind==='sale_cash';
+    if(need&&!a){ alert('اختر الحساب اللي القبض/البيع النقدي ده دخل فيه (إلزامي)'); return; }
+    const id=parseInt(v24v('pka-id')); const n0=V24D.pkAcct.length; const mx=V24D.pkAcct.reduce((m,x)=>Math.max(m,x.id),0);
+    const r=_sa.apply(this,arguments); const rec=id?V24D.pkAcct.find(x=>x.id===id):(V24D.pkAcct.length>n0?V24D.pkAcct.find(x=>x.id>mx):null);
+    if(rec){ if(need) rec.account=a; else delete rec.account; DB.save('pkAcct',V24D.pkAcct); } return r; };
+  const _rc=pkRenderCost; pkRenderCost=function(){ const r=_rc.apply(this,arguments); try{ v24TaRender('pk'); v24PkSrchRender(); }catch(e){ console.warn('pkacc',e); } return r; };
+})();
+
+// ---- خزنة التعبئة: بحث وفلترة كل الحركات (إيراد/تكلفة/قبض/بيع نقدي) ----
+let v24PkSrchSt={q:'',type:'',cat:'',acc:'',from:'',to:'',min:'',max:''};
+function v24PkSrchRows(){
+  const f=v24PkSrchSt, q=v24Nz(f.q||'');
+  return V24_TA_SCOPES.pk.ledger().filter(e=>{
+    if(f.type&&e.type!==f.type) return false; if(f.cat&&e.category!==f.cat) return false; if(f.acc&&e.account!==f.acc) return false;
+    if(f.from&&(e.date||'')<f.from) return false; if(f.to&&(e.date||'')>f.to) return false;
+    if(f.min!==''&&e.amount<+f.min) return false; if(f.max!==''&&e.amount>+f.max) return false;
+    if(q&&!v24Nz([e.category,e.party,e.desc,e.ref,e.account,e.amount].join(' ')).includes(q)) return false; return true; })
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+}
+function v24PkSrchSet(k,v){ v24PkSrchSt[k]=v; v24PkSrchRender(true); }
+function v24PkSrchRender(keepFocus){
+  const page=document.getElementById('page-pk-cost'); if(!page) return;
+  let box=document.getElementById('pk-search-panel');
+  if(!box){ box=document.createElement('div'); box.id='pk-search-panel'; const acc=document.getElementById('pk-acc-panel'); if(acc&&acc.parentNode) acc.parentNode.insertBefore(box,acc.nextSibling); else (page.querySelector('.p-content')||page).insertBefore(box,(page.querySelector('.p-content')||page).firstChild); }
+  const f=v24PkSrchSt, all=V24_TA_SCOPES.pk.ledger(), cats=[...new Set(all.map(e=>e.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'));
+  const accs=[V24_TA_LEGACY,...v24TaAll('pk')]; const rows=v24PkSrchRows();
+  const tin=rows.filter(e=>e.type==='in').reduce((s,e)=>s+e.amount,0), tout=rows.filter(e=>e.type==='out').reduce((s,e)=>s+e.amount,0);
+  const sel=(id,key,opts,ph)=>`<select onchange="v24PkSrchSet('${key}',this.value)" style="padding:6px"><option value="">${ph}</option>${opts.map(o=>`<option value="${v24Esc(o[0])}" ${f[key]===o[0]?'selected':''}>${v24Esc(o[1])}</option>`).join('')}</select>`;
+  const hadFocus=keepFocus&&document.activeElement&&document.activeElement.id==='pks-q';
+  box.innerHTML=`<div class="card" style="margin-bottom:12px"><div class="card-header"><h3>🔎 بحث وفلترة حركات الخزنة</h3></div><div class="card-body" style="padding:10px">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+   <input id="pks-q" placeholder="ابحث: بيان / بند / عميل / مرجع / مبلغ" value="${v24Esc(f.q)}" oninput="v24PkSrchSet('q',this.value)" style="padding:6px;flex:1;min-width:200px">
+   ${sel('t','type',[['in','داخل'],['out','خارج']],'كل الحركات')}
+   ${sel('c','cat',cats.map(c=>[c,c]),'كل البنود')}
+   ${sel('a','acc',accs.map(c=>[c,c]),'كل الحسابات')}
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px"><label style="font-size:12px">من <input type="date" value="${f.from}" onchange="v24PkSrchSet('from',this.value)"></label><label style="font-size:12px">إلى <input type="date" value="${f.to}" onchange="v24PkSrchSet('to',this.value)"></label><label style="font-size:12px">مبلغ من <input type="number" value="${f.min}" onchange="v24PkSrchSet('min',this.value)" style="width:90px"></label><label style="font-size:12px">إلى <input type="number" value="${f.max}" onchange="v24PkSrchSet('max',this.value)" style="width:90px"></label><button class="btn" onclick="v24PkSrchSt={q:'',type:'',cat:'',acc:'',from:'',to:'',min:'',max:''};v24PkSrchRender()">مسح الفلاتر</button><button class="btn" onclick="v24PkSrchCsv()">⬇️ تصدير Excel/CSV</button></div>
+  <div style="font-size:12px;margin:8px 0">النتائج: <b>${fmt(rows.length)}</b> حركة | داخل <b style="color:#2e7d32">${fmt(Math.round(tin))}</b> | خارج <b style="color:#c62828">${fmt(Math.round(tout))}</b> | الصافي <b>${fmt(Math.round(tin-tout))}</b></div>
+  <div style="max-height:420px;overflow:auto"><table class="v24-table"><thead><tr><th>التاريخ</th><th>البند</th><th>البيان / الطرف</th><th>المرجع</th><th>الحساب</th><th>داخل</th><th>خارج</th></tr></thead><tbody>${rows.slice(0,500).map(e=>`<tr><td>${e.date}</td><td>${v24Esc(e.category)}</td><td style="font-size:11px">${v24Esc((e.party?e.party+' — ':'')+(e.desc||''))}</td><td>${v24Esc(e.ref||'')}</td><td style="font-size:11px">${v24Esc(e.account)}</td><td>${e.type==='in'?fmt(Math.round(e.amount)):''}</td><td>${e.type==='out'?fmt(Math.round(e.amount)):''}</td></tr>`).join('')||'<tr><td colspan="7" style="text-align:center;color:#888;padding:14px">لا توجد نتائج</td></tr>'}</tbody></table></div>${rows.length>500?'<div style="font-size:11px;color:#888">بيعرض أول 500 نتيجة — ضيّق الفلتر أو صدّر الملف للكل.</div>':''}</div></div>`;
+  if(hadFocus){ const i=document.getElementById('pks-q'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } }
+}
+function v24PkSrchCsv(){
+  const rows=v24PkSrchRows(); const esc=x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"';
+  const csv='﻿التاريخ,البند,الطرف,البيان,المرجع,الحساب,داخل,خارج\n'+rows.map(e=>[e.date,e.category,e.party,e.desc,e.ref,e.account,e.type==='in'?e.amount:'',e.type==='out'?e.amount:''].map(esc).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='حركات_خزنة_التعبئة_'+today()+'.csv'; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500);
 }
 
 // ================= v24.2 — Firebase Authentication (Email/Password) + قائمة مصرّح لهم =================
