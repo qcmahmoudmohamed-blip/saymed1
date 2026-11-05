@@ -208,7 +208,7 @@ tr:hover td{background:#fafaf8}
     <input id="login-username" placeholder="اسم المستخدم" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="كلمة المرور" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">🔓 دخول</button>
-    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 02-11 • القوائم المالية</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
+    <div id="login-error"></div><div style="margin-top:8px;font-size:10px;text-align:center;color:#aaa">إصدار 05-11 • بيع الهالك</div><div id="v24-login-sync" style="margin-top:10px;font-size:11px;text-align:center;color:#888"></div>
   </div>
 </div>
 
@@ -6459,7 +6459,7 @@ function renderPL(f, label){
             <thead><tr><th>البيان</th><th style="text-align:left">المبلغ</th><th style="text-align:left">%</th></tr></thead>
             <tbody>
               ${row('إيرادات المبيعات',f.salesTotal,false,true,'var(--c-success)')}
-              ${f.otherIncome>0?row('إيرادات أخرى (مبيعات نقدية وتحصيلات من الخزينة)',f.otherIncome,true,false,'var(--c-success)'):''}
+              ${f.otherIncome>0?row('إيرادات أخرى (مبيعات نقدية وبيع هالك)',f.otherIncome,true,false,'var(--c-success)'):''}
               ${row('إجمالي الإيرادات',f.salesTotal+(f.otherIncome||0),false,true,'var(--c-success)',true)}
             </tbody>
           </table>
@@ -9059,8 +9059,9 @@ function v24CostResetOv(){
     const estimated=(f.totalOpex-lineSum)+f.cashOut_elec;
     // الصيانة في المصاريف التشغيلية وقائمة الدخل
     f.maint=maint; f.opexLines=Object.assign({},f.opexLines); if(maint>0) f.opexLines['صيانة']=maint;
-    f.cashOut_fixed_only=f.cashOut_fixed; f.totalOpex+=maint; f.otherIncome=otherIncome;
-    f.netProfit=f.netProfit+otherIncome-maint; f.netMargin=f.salesTotal>0?f.netProfit/f.salesTotal:0;
+    const scrapCredit=purchaseReturns.filter(r=>r.wasteSale&&r.date&&finDateInPeriod(r.date,year,months)).reduce((a,r)=>a+(Number(r.total)||0),0);
+    f.cashOut_fixed_only=f.cashOut_fixed; f.totalOpex+=maint; f.otherIncome=otherIncome+scrapCredit; f.scrapCredit=scrapCredit;
+    f.netProfit=f.netProfit+otherIncome+scrapCredit-maint; f.netMargin=f.salesTotal>0?f.netProfit/f.salesTotal:0;
     // التدفق
     f.cashIn_other=otherIncome; f.cashOut_maint=maint;
     f.cashOut_total=f.cashOut_pur+f.cashOut_handling+f.cashOut_fixed_only+f.cashOut_elec+maint+f.periodInterest;
@@ -10781,6 +10782,65 @@ function v24PiUndo(){
   lg[i].undone=true; v24SetCfg('pkInvLog',lg); v24RenderPkInv();
 }
 
+
+/* ===== بيع الهالك (بلوكات) للموردين: حساب الكمية + تسجيل البيع بخصم من حساب المورد أو نقدًا ===== */
+function v24ScRows(from,to){
+  const W=(typeof productWeights!=='undefined'&&productWeights)||{}; const by={};
+  (production||[]).forEach(p=>{ if(!p.date||(from&&p.date<from)||(to&&p.date>to)) return;
+    const m=p.material||'غير محدد'; const b=by[m]=by[m]||{rec:0,est:0,pcs:0};
+    if(Number(p.wasteKg)>0) b.rec+=Number(p.wasteKg);
+    else { const n=Number(p.waste)||0, w=Number(W[p.product])||0; b.pcs+=n; b.est+=n*w/1000; } });
+  const sold={}; (v24Cfg('scrapSales',[])||[]).forEach(s=>{ if(from&&s.date<from) return; if(to&&s.date>to) return; sold[s.material]=(sold[s.material]||0)+(Number(s.kg)||0); });
+  return Object.entries(by).map(([m,b])=>({m,rec:b.rec,est:b.est,pcs:b.pcs,tot:b.rec+b.est,sold:sold[m]||0})).filter(r=>r.tot>0).sort((a,b)=>b.tot-a.tot);
+}
+function v24ScRender(){
+  const el=document.getElementById('sc-body'); if(!el) return;
+  const f=(document.getElementById('sc-from')||{}).value||'2026-01-01', t=(document.getElementById('sc-to')||{}).value||today();
+  const rows=v24ScRows(f,t); const sales=(v24Cfg('scrapSales',[])||[]).slice().sort((a,b)=>b.date.localeCompare(a.date));
+  const n1=x=>(Math.round(x*10)/10).toLocaleString('ar-EG'); const tot=rows.reduce((s,r)=>s+r.tot,0), sold=rows.reduce((s,r)=>s+r.sold,0);
+  const sups=(typeof suppliersList!=='undefined'?suppliersList:[]);
+  el.innerHTML=`<div class="v24-card"><div class="form-row"><div class="form-group"><label>من</label><input type="date" id="sc-from" value="${f}" onchange="v24ScRender()"></div><div class="form-group"><label>إلى</label><input type="date" id="sc-to" value="${t}" onchange="v24ScRender()"></div></div>
+  <div class="v24-kpis"><div class="v24-kpi"><div class="l">إجمالي الهالك (كجم)</div><div class="v">${n1(tot)}</div></div><div class="v24-kpi"><div class="l">اتباع (كجم)</div><div class="v">${n1(sold)}</div></div><div class="v24-kpi"><div class="l">المتاح للبيع (كجم)</div><div class="v">${n1(tot-sold)}</div></div></div>
+  <table class="v24-table" style="margin-top:8px"><thead><tr><th>الخامة</th><th>مسجّل بالكيلو</th><th>تقديري من عدد القطع</th><th>الإجمالي</th><th>اتباع</th><th>المتاح</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${v24Esc(r.m)}</td><td>${n1(r.rec)}</td><td>${n1(r.est)} <span style="font-size:10px;color:#888">(${fmt(r.pcs)} قطعة)</span></td><td><b>${n1(r.tot)}</b></td><td>${n1(r.sold)}</td><td><b>${n1(r.tot-r.sold)}</b></td></tr>`).join('')||'<tr><td colspan="6" style="text-align:center;color:#888;padding:14px">لا يوجد هالك في الفترة</td></tr>'}</tbody></table>
+  <div style="font-size:11px;color:#777;margin-top:6px">الكيلو المسجّل هو وزن الهالك الفعلي في سجل الإنتاج. التقديري = عدد قطع الهالك × وزن القطعة، للسجلات اللي مفيهاش وزن هالك.</div></div>
+  <div class="v24-card" style="margin-top:12px"><b>تسجيل بيع هالك</b>
+  <div class="form-row"><div class="form-group"><label>التاريخ</label><input type="date" id="sc-date" value="${today()}"></div><div class="form-group"><label>المشتري (أي اسم)</label><input id="sc-buyer" list="sc-dl"><datalist id="sc-dl">${sups.map(s=>`<option value="${v24Esc(s)}">`).join('')}</datalist></div><div class="form-group"><label>الخامة</label><select id="sc-mat">${rows.map(r=>`<option value="${v24Esc(r.m)}">${v24Esc(r.m)} — متاح ${n1(r.tot-r.sold)} كجم</option>`).join('')}<option value="مختلط">مختلط / عدة خامات</option></select></div></div>
+  <div class="form-row"><div class="form-group"><label>الكمية (كجم)</label><input type="number" step="0.01" id="sc-kg" oninput="v24ScCalc()"></div><div class="form-group"><label>سعر الكيلو</label><input type="number" step="0.01" id="sc-price" oninput="v24ScCalc()"></div><div class="form-group"><label>الإجمالي</label><input type="number" step="0.01" id="sc-amt" readonly></div><div class="form-group"><label>طريقة السداد</label><select id="sc-mode"><option value="deduct">خصم من حساب المورد</option><option value="cash">نقدًا للخزينة</option></select></div></div>
+  <div class="form-group"><label>ملاحظات</label><input id="sc-note"></div><button class="btn btn-primary" onclick="v24ScSave()">💾 تسجيل البيع</button></div>
+  <div class="v24-card" style="margin-top:12px"><b>مبيعات الهالك المسجلة</b><table class="v24-table" style="margin-top:6px"><thead><tr><th>التاريخ</th><th>المشتري</th><th>الخامة</th><th>كجم</th><th>سعر الكيلو</th><th>الإجمالي</th><th>الطريقة</th><th></th></tr></thead><tbody>${sales.map(s=>`<tr><td>${s.date}</td><td>${v24Esc(s.buyer)}</td><td>${v24Esc(s.material)}</td><td>${n1(s.kg)}</td><td>${fmt(s.price)}</td><td><b>${fmt(s.amount)}</b></td><td>${s.mode==='cash'?'نقدًا':'خصم من حسابه'}</td><td><button class="btn" style="padding:2px 7px;font-size:10px;color:var(--c-danger)" onclick="v24ScDel(${s.id})">🗑</button></td></tr>`).join('')||'<tr><td colspan="8" style="text-align:center;color:#888;padding:12px">لسه مفيش مبيعات</td></tr>'}</tbody></table>
+  <div style="font-size:12px;margin-top:6px">إجمالي المبيعات: <b>${fmt(sales.reduce((s,x)=>s+(+x.amount||0),0))}</b></div></div>`;
+}
+function v24ScCalc(){ const k=+document.getElementById('sc-kg').value||0, p=+document.getElementById('sc-price').value||0; document.getElementById('sc-amt').value=Math.round(k*p*100)/100; }
+function v24ScSave(){
+  if(!v24Can('write')){ alert('مفيش صلاحية تعديل'); return; }
+  const g=id=>document.getElementById(id).value;
+  const o={date:g('sc-date'),buyer:g('sc-buyer').trim(),material:g('sc-mat'),kg:+g('sc-kg')||0,price:+g('sc-price')||0,mode:g('sc-mode'),note:g('sc-note').trim()};
+  o.amount=Math.round(o.kg*o.price*100)/100;
+  if(!o.date||!o.buyer){ alert('التاريخ واسم المشتري مطلوبين'); return; }
+  if(!(o.kg>0)||!(o.price>0)){ alert('الكمية وسعر الكيلو لازم يكونوا أكبر من صفر'); return; }
+  const id=(v24Cfg('scrapSales',[])||[]).reduce((m,x)=>Math.max(m,x.id),0)+1; o.id=id;
+  const desc='بيع هالك بلوكات — '+o.material+' — '+o.kg+' كجم × '+o.price;
+  if(o.mode==='cash'){
+    const r={id:nextId.tre++,date:o.date,type:'in',category:'إيرادات أخرى',subcategory:'مبيعات نقدية',party:o.buyer,desc:desc+' — '+o.buyer,method:'كاش',ref:'',notes:o.note,amount:o.amount,wasteSale:true,scrapId:id};
+    treasury.push(r); o.refType='treasury'; o.refId=r.id;
+  } else {
+    if(!suppliersList.some(x=>v24Nz(x)===v24Nz(o.buyer))){ if(!confirm('«'+o.buyer+'» مش مسجل كمورد. أضيفه كمورد عشان الخصم يظهر في حسابه؟')) return; suppliersList.push(o.buyer); o.newSupplier=true; }
+    const sup=suppliersList.find(x=>v24Nz(x)===v24Nz(o.buyer))||o.buyer;
+    const r={id:nextId.pret++,date:o.date,supplier:sup,item:'بيع هالك — '+o.material,qty:o.kg,unitPrice:o.price,total:o.amount,notes:o.note||desc,wasteSale:true,scrapId:id};
+    purchaseReturns.push(r); o.buyer=sup; o.refType='purchaseReturns'; o.refId=r.id;
+  }
+  const lg=(v24Cfg('scrapSales',[])||[]).slice(); lg.push(o); v24SetCfg('scrapSales',lg);
+  saveAll(); alert('اتسجل بيع '+fmt(o.amount)+' ج.م'+(o.mode==='cash'?' في الخزينة.':' وخصمه من حساب '+o.buyer+'.')); v24ScRender();
+}
+function v24ScDel(id){
+  if(!v24Can('delete')){ alert('الحذف للمدير أو بصلاحية حذف'); return; }
+  const lg=(v24Cfg('scrapSales',[])||[]).slice(); const s=lg.find(x=>x.id===id); if(!s) return;
+  if(!confirm('هتحذف البيع ده وتشيل أثره من '+(s.mode==='cash'?'الخزينة':'حساب المورد')+'. متأكد؟')) return;
+  if(s.refType==='treasury') treasury=treasury.filter(r=>!(r.scrapId===id&&r.wasteSale));
+  else purchaseReturns=purchaseReturns.filter(r=>!(r.scrapId===id&&r.wasteSale));
+  v24SetCfg('scrapSales',lg.filter(x=>x.id!==id)); saveAll(); v24ScRender();
+}
+
 // ================= v24.2 — Firebase Authentication (Email/Password) + قائمة مصرّح لهم =================
 // كل مستخدم له حساب سحابة بإيميل تركيبي: <username>@saimd-app.com (+ .v<n> لو المدير أعاد تعيين كلمة سره).
 // الدخول للبيانات مشروط بوجود وثيقة saimd_allow/<email> (يكتبها المدير) — تحميها قواعد firestore.rules.
@@ -10973,6 +11033,7 @@ deleteUser=async function(id){
   v24AddPage('packaging','pk-cost','🏦 خزنة الكوفير',pkRenderCost,`<div class="p-content"><div class="v24-warn">خزنة الكوفير مستقلة تمامًا عن خزينة مصنع الحقن: مصروفات الموردين والمرتبات والإيجار وتحصيلات العملاء.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pk-cost-filter"></span><button class="btn btn-primary" id="pk-cost-add" onclick="pkNewLed()">➕ حركة جديدة</button></div><div id="pk-form2"></div><div class="v24-kpis" id="pk-cost-kpis"></div><div id="pk-cost-sup"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-cost-body"></div></div></div>`);
   v24AddPage('packaging','pk-sales','🧾 المبيعات',pkRenderSales,`<div class="p-content"><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><span id="pk-sal-filter"></span><select id="pk-sc" onchange="pkRenderSales()" style="padding:6px 10px"><option value="">كل العملاء</option></select><button class="btn btn-primary" id="pk-sal-add" onclick="pkNewAcct('sales')">➕ مبيعة جديدة</button></div><div id="pk-sal-form"></div><div class="v24-kpis" id="pk-sal-kpis"></div><div id="pk-sal-top"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-sal-body"></div></div></div>`);
   v24AddPage('packaging','pk-accounts','👥 حسابات العملاء',pkRenderAccounts,`<div class="p-content"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pk-acc-add" onclick="pkNewAcct('acc')">➕ حركة (قبض / مبيعة)</button><button class="btn" id="pk-cust-add" onclick="pkNewCustomer()">👤 عميل جديد</button></div><div id="pk-acc-form"></div><div class="v24-kpis" id="pk-acc-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-acc-list"></div></div><div id="pk-acc-stm"></div></div>`);
+  v24AddPage('production','scrap','♻️ بيع الهالك',v24ScRender,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">كمية هالك البلوكات من سجل الإنتاج، وتسجيل بيعه لأي مشتري بسعر كيلو متغير. البيع بيتخصم من حساب المورد أو بيدخل الخزينة نقدًا، وبيظهر في قائمة الدخل كإيراد آخر.</p><div id="sc-body"></div></div>`);
   v24AddPage('packaging','pk-inv','🧾 فواتير من كشوف العملاء',v24RenderPkInv,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">فواتير بيع كشوف برجر شوب وبيتزا بارتي وهارت اتاك دمياط (من 30/7 لحد 19/10). بمعاينة قبل الإضافة وزرار تراجع.</p><div id="pi-body"></div></div>`);
   v24AddPage('packaging','pk-stock','📦 مخزن الكوفير',pkRenderStock,`<div class="p-content"><div class="v24-warn">مخزن الكوفير مستقل عن مخزون مصنع الحقن. الرصيد = رصيد أول المدة + الإضافات − الصرف (والتقييم بالمتوسط المتحرك).</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><select id="pks-g" onchange="pkRenderStock()" style="padding:6px 10px"></select><input id="pks-q" placeholder="🔍 بحث بالاسم" oninput="pkRenderStock()" style="padding:6px 10px"><label style="font-size:12px"><input type="checkbox" id="pks-nz" onchange="pkRenderStock()"> الأصناف برصيد فقط</label><button class="btn btn-primary" id="pks-open" onclick="pkOpeningForm()">📋 رصيد أول المدة</button><button class="btn btn-primary" id="pks-mv" onclick="pkMoveNew()">➕ حركة مخزن</button><button class="btn" id="pks-add" onclick="pkNewItem()">➕ صنف جديد</button><button class="btn" id="pks-sheet" onclick="pkLoadSheetItems()">📥 تحميل أصناف الشيت (92)</button></div><div id="pks-form"></div><div class="v24-kpis" id="pks-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pks-body"></div></div><div id="pks-card"></div><div id="pks-recent" style="margin-top:10px"></div></div>`);
   v24AddPage('packaging','pk-purch','🧾 فواتير الشراء',pkRenderPurch,`<div class="p-content"><div class="v24-warn">كل فاتورة شراء بتضيف أصنافها للمخزن تلقائيًا، وتسجّل المدفوع كمصروف في خزنة الكوفير (اختياري). المشتريات القديمة اللي اتسددت قبل كده موجودة في الخزنة — متدخلهاش تاني هنا إلا لو عايز تضيف أصنافها للمخزن عن طريق «حركة مخزن» بدل الفاتورة.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pkp-filter"></span><button class="btn btn-primary" id="pkp-add" onclick="pkPurchNew()">➕ فاتورة شراء</button></div><div id="pkp-form"></div><div class="v24-kpis" id="pkp-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pkp-body"></div></div></div>`);
