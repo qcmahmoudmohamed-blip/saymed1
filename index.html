@@ -10869,7 +10869,7 @@ function v24TaEnsure(prefix){
   }
   wrap('savePayment','pay'); wrap('saveSupplierPayment','suppay'); wrap('saveTreasuryEntry','tre');
   const _g=getTreasuryLedger; getTreasuryLedger=function(){ const L=_g.apply(this,arguments); L.forEach(e=>{ e.account=(e.rec&&e.rec.account)||V24_TA_LEGACY; }); return L; };
-  const _r=renderTreasuryPage; renderTreasuryPage=function(){ const r=_r.apply(this,arguments); try{ v24TaRender('inj'); }catch(e){ console.warn('treacc',e); } return r; };
+  const _r=renderTreasuryPage; renderTreasuryPage=function(){ const r=_r.apply(this,arguments); try{ v24TaRender('inj'); v24TrePeriod(); }catch(e){ console.warn('treacc',e); } return r; };
 })();
 
 const V24_TA_SCOPES={
@@ -11025,6 +11025,7 @@ function v24PkSrchRender(keepFocus){
    ${sel('a','acc',accs.map(c=>[c,c]),'كل الحسابات')}
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px"><label style="font-size:12px">من <input type="date" value="${f.from}" onchange="v24PkSrchSet('from',this.value)"></label><label style="font-size:12px">إلى <input type="date" value="${f.to}" onchange="v24PkSrchSet('to',this.value)"></label><label style="font-size:12px">مبلغ من <input type="number" value="${f.min}" onchange="v24PkSrchSet('min',this.value)" style="width:90px"></label><label style="font-size:12px">إلى <input type="number" value="${f.max}" onchange="v24PkSrchSet('max',this.value)" style="width:90px"></label><button class="btn" onclick="v24PkSrchSt={q:'',type:'',cat:'',acc:'',from:'',to:'',min:'',max:''};v24PkSrchRender()">مسح الفلاتر</button><button class="btn" onclick="v24PkSrchCsv()">⬇️ تصدير Excel/CSV</button></div>
+  ${(f.from||f.to)?`<div class="v24-kpis" style="margin:8px 0">${v24PeriodCards(v24PeriodCalc(all,0,f.from,f.to),(f.from||'البداية')+' → '+(f.to||'اليوم'))}</div>`:''}
   <div style="font-size:12px;margin:8px 0">النتائج: <b>${fmt(rows.length)}</b> حركة | داخل <b style="color:#2e7d32">${fmt(Math.round(tin))}</b> | خارج <b style="color:#c62828">${fmt(Math.round(tout))}</b> | الصافي <b>${fmt(Math.round(tin-tout))}</b></div>
   <div style="max-height:420px;overflow:auto"><table class="v24-table"><thead><tr><th>التاريخ</th><th>البند</th><th>البيان / الطرف</th><th>المرجع</th><th>الحساب</th><th>داخل</th><th>خارج</th></tr></thead><tbody>${rows.slice(0,500).map(e=>`<tr><td>${e.date}</td><td>${v24Esc(e.category)}</td><td style="font-size:11px">${v24Esc((e.party?e.party+' — ':'')+(e.desc||''))}</td><td>${v24Esc(e.ref||'')}</td><td style="font-size:11px">${v24Esc(e.account)}</td><td>${e.type==='in'?fmt(Math.round(e.amount)):''}</td><td>${e.type==='out'?fmt(Math.round(e.amount)):''}</td></tr>`).join('')||'<tr><td colspan="7" style="text-align:center;color:#888;padding:14px">لا توجد نتائج</td></tr>'}</tbody></table></div>${rows.length>500?'<div style="font-size:11px;color:#888">بيعرض أول 500 نتيجة — ضيّق الفلتر أو صدّر الملف للكل.</div>':''}</div></div>`;
   if(hadFocus){ const i=document.getElementById('pks-q'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } }
@@ -11033,6 +11034,29 @@ function v24PkSrchCsv(){
   const rows=v24PkSrchRows(); const esc=x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"';
   const csv='﻿التاريخ,البند,الطرف,البيان,المرجع,الحساب,داخل,خارج\n'+rows.map(e=>[e.date,e.category,e.party,e.desc,e.ref,e.account,e.type==='in'?e.amount:'',e.type==='out'?e.amount:''].map(esc).join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='حركات_خزنة_التعبئة_'+today()+'.csv'; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+
+// ---- رصيد الخزنة في الفترة المختارة (فلتر التاريخ): قبل الفترة + صافي الحركة + آخر الفترة ----
+function v24PeriodCalc(entries,open,from,to){
+  let before=open||0,inn=0,out=0;
+  entries.forEach(e=>{ const d=e.date||''; const v=e.type==='in'?e.amount:-e.amount;
+    if(from&&d<from) before+=v; else if(!to||d<=to){ if(e.type==='in') inn+=e.amount; else out+=e.amount; } });
+  return {before,inn,out,net:inn-out,close:before+inn-out};
+}
+function v24PeriodCards(c,label){
+  const f=x=>fmt(Math.round(x*100)/100), col=x=>x<0?'var(--c-danger)':'var(--c-success)';
+  return `<div class="metric" style="border:2px solid var(--c-primary)"><div class="label">${label} — صافي حركة الفترة</div><div class="value" style="color:${col(c.net)}">${f(c.net)}</div><div class="sub">داخل ${f(c.inn)} − خارج ${f(c.out)}</div></div>
+  <div class="metric"><div class="label">الرصيد قبل الفترة</div><div class="value">${f(c.before)}</div><div class="sub">ج.م</div></div>
+  <div class="metric"><div class="label">الرصيد في آخر الفترة</div><div class="value" style="color:${col(c.close)}">${f(c.close)}</div><div class="sub">ج.م</div></div>`;
+}
+function v24TrePeriod(){
+  const from=(document.getElementById('tre-filter-from')||{}).value||'', to=(document.getElementById('tre-filter-to')||{}).value||'';
+  const host=document.getElementById('tre-summary-cards'); if(!host) return;
+  const old=document.getElementById('tre-period-cards'); if(old) old.remove();
+  if(!from&&!to) return;
+  const c=v24PeriodCalc(getTreasuryLedger(),(treasurySettings&&treasurySettings.opening)||0,from,to);
+  const d=document.createElement('div'); d.id='tre-period-cards'; d.className=host.className; d.style.cssText=host.style.cssText+';margin-top:10px';
+  d.innerHTML=v24PeriodCards(c,(from||'البداية')+' → '+(to||'اليوم')); host.parentNode.insertBefore(d,host.nextSibling);
 }
 
 // ================= v24.2 — Firebase Authentication (Email/Password) + قائمة مصرّح لهم =================
