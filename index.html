@@ -11475,6 +11475,49 @@ function pkSIPrint(id){
   const _da=pkDelAcct; pkDelAcct=function(id,back){ const r=V24D.pkAcct.find(x=>x.id===id); if(r&&r.saleInvId){ alert('الحركة دي تابعة لفاتورة بيع '+(r.ref||'')+' — احذف الفاتورة من صفحة «فواتير البيع (أصناف)»'); return; } return _da.apply(this,arguments); };
 })();
 
+// ---- التحصيل من عميل جوه خزنة التعبئة (بيتسجل كقبض في حساب العميل + بيدخل الخزنة المختارة) ----
+function pkLedCustBal(){
+  const c=v24v('pkl-cust').trim(), el=document.getElementById('pkl-custbal'); if(!el) return;
+  if(!c){ el.innerHTML=''; return; }
+  if(!pkCustomers().includes(c)){ el.innerHTML='<span style="color:#b26a00">عميل جديد</span>'; return; }
+  const b=pkSICustBalance(c); el.innerHTML=`رصيده الحالي: <b style="color:${b>0?'#b26a00':'#1a7f37'}">${pkF(b,2)}</b> ${b>0?'(عليه)':b<0?'(له)':''}`;
+}
+function pkNewLedReceipt(){ pkNewLed(); const k=document.getElementById('pkl-kind'); if(k){ k.value='receipt'; pkLedKind(); const c=document.getElementById('pkl-cust'); if(c) c.focus(); } }
+(function(){
+  const _lf=pkLedForm; pkLedForm=function(r){
+    let h=_lf.apply(this,arguments);
+    h=h.replace('>إيراد</option>','>إيراد</option><option value="receipt">💵 تحصيل من عميل</option>');
+    const m='<div class="form-row"><div class="form-group" style="flex:2"><label>البيان (إلزامي)</label>';
+    const row='<div class="form-row" id="pkl-custrow" style="display:none">'+pkCustDL()+'<div class="form-group" style="flex:2"><label>العميل اللي دفع *</label><input id="pkl-cust" list="pk-cust-dl" autocomplete="off" placeholder="اختر العميل من القايمة أو اكتب اسمه" oninput="pkLedCustBal()" onchange="pkLedCustBal()"></div><div class="form-group"><div id="pkl-custbal" style="font-size:12px;padding-top:26px"></div></div></div>';
+    return h.includes(m)?h.replace(m,row+m):h;
+  };
+  const _lk=pkLedKind; pkLedKind=function(sel){
+    _lk.apply(this,arguments); const rc=v24v('pkl-kind')==='receipt';
+    const row=document.getElementById('pkl-custrow'), cat=document.getElementById('pkl-cat');
+    if(row) row.style.display=rc?'':'none';
+    if(cat&&cat.closest('.form-group')) cat.closest('.form-group').style.display=rc?'none':'';
+  };
+  const _sl=pkSaveLed; pkSaveLed=function(){
+    if(v24v('pkl-kind')!=='receipt') return _sl.apply(this,arguments);
+    if(!v24Can('write')){alert('مفيش صلاحية تعديل');return;}
+    if(v24v('pkl-id')){ alert('التحصيل من عميل بيتسجّل كحركة جديدة — مش بيتحوّل من حركة قديمة. اقفل التعديل وادوس «تحصيل من عميل».'); return; }
+    const date=v24v('pkl-date'), customer=v24v('pkl-cust').trim(), amount=pkN(v24v('pkl-amt')), account=v24v('pkl-account'), ref=v24v('pkl-ref').trim(), note=v24v('pkl-desc').trim();
+    if(!date||!(amount>0)){alert('التاريخ والمبلغ (أكبر من صفر) مطلوبان');return;}
+    if(!customer){alert('اختر العميل اللي دفع');return;}
+    if(!account){alert('اختر الحساب (الخزنة) اللي استلم المبلغ');return;}
+    if(!pkCustomers().includes(customer)&&!confirm('«'+customer+'» مش موجود في حسابات العملاء. تضيفه كعميل جديد؟')) return;
+    V24D.pkAcct.push({id:pkNextAcctId(),date,customer,kind:'receipt',amount,ref,note,account,createdBy:v24Who()});
+    DB.save('pkAcct',V24D.pkAcct); document.getElementById('pk-form2').innerHTML=''; pkRenderCost();
+    try{ if(document.getElementById('pk-acc-list')) pkRenderAccounts(); }catch(e){}
+  };
+  const _rc=pkRenderCost; pkRenderCost=function(){ const r=_rc.apply(this,arguments); const a=document.getElementById('pk-cost-add'), b=document.getElementById('pk-cost-rcv'); if(a&&b) b.style.display=a.style.display; return r; };
+  // كشف حساب العميل: نموذج القبض/المبيعة يظهر فوق الكشف مباشرة (كان بيفتح فوق الصفحة وانت نازل تحت فمش بتشوفه)
+  const _rs=pkRenderStatement; pkRenderStatement=function(){ const r=_rs.apply(this,arguments); const f=document.getElementById('pk-acc-form'), s=document.getElementById('pk-acc-stm'); if(f&&s&&s.parentNode&&f.nextElementSibling!==s) s.parentNode.insertBefore(f,s); return r; };
+  const _ra=pkRenderAccounts; pkRenderAccounts=function(){ const r=_ra.apply(this,arguments); if(!pkStmCust){ const f=document.getElementById('pk-acc-form'), k=document.getElementById('pk-acc-kpis'); if(f&&k&&k.parentNode&&f.nextElementSibling!==k) k.parentNode.insertBefore(f,k); } return r; };
+  const _na=pkNewAcct; pkNewAcct=function(back,kind,cust){ const r=_na.apply(this,arguments); const el=pkFormEl(back); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:'smooth',block:'center'}); return r; };
+  const _ea=pkEditAcct; pkEditAcct=function(id,back){ const r=_ea.apply(this,arguments); const el=pkFormEl(back); if(el&&el.firstChild&&el.scrollIntoView) el.scrollIntoView({behavior:'smooth',block:'center'}); return r; };
+})();
+
 // ================= v24 — تركيب الصفحات والتهيئة =================
 (function v24Boot(){
   v24InitLast();
@@ -11493,7 +11536,7 @@ function pkSIPrint(id){
   })();
   const _tg=toggleGroup; toggleGroup=function(g){ if(g!=='packaging'){ document.getElementById('ng-items-packaging')?.classList.remove('open'); document.getElementById('ng-header-packaging')?.classList.remove('open'); } else { ['machines','production','commerce','finance','hr'].forEach(x=>{document.getElementById('ng-items-'+x)?.classList.remove('open');document.getElementById('ng-header-'+x)?.classList.remove('open');}); } return _tg(g); };
   v24AddPage('packaging','pk-prod','🏭 الإنتاج',pkRenderProd,`<div class="p-content"><div class="v24-warn">وحدة مستقلة لماكينة فلوباك 350 — بياناتها منفصلة تمامًا عن خزينة وتكاليف مصنع الحقن.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pk-prod-filter"></span><button class="btn btn-primary" id="pk-prod-add" onclick="pkNewRun()">➕ تشغيلة جديدة</button></div><div id="pk-form"></div><div class="v24-kpis" id="pk-prod-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-prod-body"></div></div></div>`);
-  v24AddPage('packaging','pk-cost','🏦 خزنة الكوفير',pkRenderCost,`<div class="p-content"><div class="v24-warn">خزنة الكوفير مستقلة تمامًا عن خزينة مصنع الحقن: مصروفات الموردين والمرتبات والإيجار وتحصيلات العملاء.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pk-cost-filter"></span><button class="btn btn-primary" id="pk-cost-add" onclick="pkNewLed()">➕ حركة جديدة</button></div><div id="pk-form2"></div><div class="v24-kpis" id="pk-cost-kpis"></div><div id="pk-cost-sup"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-cost-body"></div></div></div>`);
+  v24AddPage('packaging','pk-cost','🏦 خزنة الكوفير',pkRenderCost,`<div class="p-content"><div class="v24-warn">خزنة الكوفير مستقلة تمامًا عن خزينة مصنع الحقن: مصروفات الموردين والمرتبات والإيجار وتحصيلات العملاء.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pk-cost-filter"></span><button class="btn btn-primary" id="pk-cost-add" onclick="pkNewLed()">➕ حركة جديدة</button><button class="btn" id="pk-cost-rcv" onclick="pkNewLedReceipt()">💵 تحصيل من عميل</button></div><div id="pk-form2"></div><div class="v24-kpis" id="pk-cost-kpis"></div><div id="pk-cost-sup"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-cost-body"></div></div></div>`);
   v24AddPage('packaging','pk-sales','🧾 المبيعات',pkRenderSales,`<div class="p-content"><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><span id="pk-sal-filter"></span><select id="pk-sc" onchange="pkRenderSales()" style="padding:6px 10px"><option value="">كل العملاء</option></select><button class="btn btn-primary" id="pk-sal-add" onclick="pkNewAcct('sales')">➕ مبيعة جديدة</button></div><div id="pk-sal-form"></div><div class="v24-kpis" id="pk-sal-kpis"></div><div id="pk-sal-top"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-sal-body"></div></div></div>`);
   v24AddPage('packaging','pk-accounts','👥 حسابات العملاء',pkRenderAccounts,`<div class="p-content"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pk-acc-add" onclick="pkNewAcct('acc')">➕ حركة (قبض / مبيعة)</button><button class="btn" id="pk-cust-add" onclick="pkNewCustomer()">👤 عميل جديد</button></div><div id="pk-acc-form"></div><div class="v24-kpis" id="pk-acc-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pk-acc-list"></div></div><div id="pk-acc-stm"></div></div>`);
   v24AddPage('production','scrap','♻️ بيع الهالك',v24ScRender,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">كمية هالك البلوكات من سجل الإنتاج، وتسجيل بيعه لأي مشتري بسعر كيلو متغير. البيع بيتخصم من حساب المورد أو بيدخل الخزينة نقدًا، وبيظهر في قائمة الدخل كإيراد آخر.</p><div id="sc-body"></div></div>`);
