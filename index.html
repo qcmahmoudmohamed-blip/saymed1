@@ -11518,6 +11518,72 @@ function pkNewLedReceipt(){ pkNewLed(); const k=document.getElementById('pkl-kin
   const _ea=pkEditAcct; pkEditAcct=function(id,back){ const r=_ea.apply(this,arguments); const el=pkFormEl(back); if(el&&el.firstChild&&el.scrollIntoView) el.scrollIntoView({behavior:'smooth',block:'center'}); return r; };
 })();
 
+// ================= أرصدة افتتاحية للعملاء والموردين (التعبئة والتغليف) — شاشة واحدة لكل الأسماء =================
+// العملاء: بتتسجل كحركة «رصيد سابق» (opening) في حساب العميل — موجب = عليه، سالب = له.
+// الموردين: بتتسجل في رصيد أول المدة الخاص بالمورد (نفس زرار «📌 رصيد أول المدة» في صفحة الموردين) — موجب = مستحق للمورد، سالب = له عندنا.
+function pkOpenMode(arr){ const c={}; arr.forEach(d=>{ if(d) c[d]=(c[d]||0)+1; }); return Object.keys(c).sort((a,b)=>c[b]-c[a]||a.localeCompare(b))[0]||''; }
+function pkOpenCustSum(c){ return pkR2(V24D.pkAcct.filter(a=>a.customer===c&&a.kind==='opening').reduce((t,a)=>t+pkN(a.amount),0)); }
+function pkRenderOpen(){
+  const el=document.getElementById('pko-body'); if(!el) return;
+  const w=v24Can('write'), dis=w?'':'disabled', yr=today().slice(0,4)+'-01-01';
+  const cdate=pkOpenMode(V24D.pkAcct.filter(a=>a.kind==='opening').map(a=>a.date))||yr;
+  const so=v24Cfg('pkSupOpen',{})||{}; const sdate=pkOpenMode(Object.values(so).map(x=>x.date))||yr;
+  const custs=pkCustomers().slice().sort((a,b)=>a.localeCompare(b,'ar')), sups=v24PsList();
+  const col=b=>`<b style="color:${b>0.004?'#b26a00':b<-0.004?'#1a7f37':'#555'}">${pkF(b,2)}</b>`;
+  el.innerHTML=`<div class="card" style="margin-bottom:14px"><div class="card-body">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>👥 العملاء</b><label style="font-size:12px">تاريخ الرصيد الافتتاحي <input type="date" id="pko-cdate" value="${cdate}" ${dis}></label><span style="font-size:11px;color:#777">موجب = عليه (مستحق لنا) · سالب = له عندنا · اكتب الرصيد الجديد في الخانة وسيب اللي مش هتغيره زي ما هو</span></div>
+  <div style="overflow:auto"><table class="v24-table" id="pko-ctab"><thead><tr><th>العميل</th><th>الرصيد الحالي (بعد الحركات)</th><th>الرصيد الافتتاحي</th></tr></thead><tbody>${custs.map(c=>{ const o=pkOpenCustSum(c); return `<tr><td>${v24Esc(c)}</td><td>${col(pkSICustBalance(c))}</td><td><input type="number" step="0.01" class="pko-cin" style="width:140px" data-name="${v24Esc(c)}" data-orig="${o}" value="${o||''}" ${dis}></td></tr>`; }).join('')}</tbody></table></div>
+  ${w?`<div style="margin-top:8px"><button class="btn" onclick="pkOpenAddRow('pko-ctab','عميل')">➕ عميل جديد</button> <button class="btn btn-primary" onclick="pkOpenSaveC()">💾 حفظ أرصدة العملاء</button></div>`:''}</div></div>
+  <div class="card"><div class="card-body">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>🏭 الموردين</b><label style="font-size:12px">اعتبارًا من تاريخ <input type="date" id="pko-sdate" value="${sdate}" ${dis}></label><span style="font-size:11px;color:#777">موجب = مستحق للمورد · سالب = له عندنا · فواتير وحركات المورد قبل التاريخ ده بتتجاهل لأن الرصيد بيشملها</span></div>
+  <div style="overflow:auto"><table class="v24-table" id="pko-stab"><thead><tr><th>المورد</th><th>الرصيد الحالي (بعد الحركات)</th><th>الرصيد الافتتاحي</th><th>من تاريخ</th></tr></thead><tbody>${sups.map(s=>{ const r=v24PsRows(s), o=pkR2(r.op); return `<tr><td>${v24Esc(s)}</td><td>${col(r.bal)}</td><td><input type="number" step="0.01" class="pko-sin" style="width:140px" data-name="${v24Esc(s)}" data-orig="${o}" value="${o||''}" ${dis}></td><td style="font-size:11px;color:#777">${r.from||'—'}</td></tr>`; }).join('')}</tbody></table></div>
+  ${w?`<div style="margin-top:8px"><button class="btn" onclick="pkOpenAddRow('pko-stab','مورد')">➕ مورد جديد</button> <button class="btn btn-primary" onclick="pkOpenSaveS()">💾 حفظ أرصدة الموردين</button></div>`:''}</div></div>`;
+}
+function pkOpenAddRow(tabId,what){
+  const tb=document.querySelector('#'+tabId+' tbody'); if(!tb) return; const sup=tabId==='pko-stab';
+  tb.insertAdjacentHTML('beforeend',`<tr class="pko-new"><td><input class="pko-nname" placeholder="اسم ال${what} الجديد" style="width:100%"></td><td>—</td><td><input type="number" step="0.01" class="pko-nval" style="width:140px"></td>${sup?'<td></td>':''}</tr>`);
+  const n=tb.querySelectorAll('.pko-nname'); n[n.length-1].focus();
+}
+function pkOpenReadNew(tabId,existsFn,what){
+  const out=[], seen=new Set(); let bad='';
+  document.querySelectorAll('#'+tabId+' tr.pko-new').forEach(tr=>{
+    const name=tr.querySelector('.pko-nname').value.trim().replace(/\s+/g,' '), v=pkR2(pkN(tr.querySelector('.pko-nval').value));
+    if(!name&&!v) return;
+    if(!name){ bad='اكتب اسم ال'+what+' الجديد'; return; }
+    if(!v){ bad='اكتب رصيد افتتاحي (غير صفر) لـ «'+name+'»'; return; }
+    if(existsFn(name)||seen.has(v24Nz(name))){ bad='«'+name+'» موجود بالفعل في القايمة — عدّل رصيده من الجدول'; return; }
+    seen.add(v24Nz(name)); out.push({name,v});
+  });
+  return {out,bad};
+}
+function pkOpenSaveC(){
+  if(!v24Can('write')){alert('مفيش صلاحية تعديل');return;}
+  const date=v24v('pko-cdate'); if(!date){alert('اختار تاريخ الرصيد الافتتاحي');return;}
+  const ch=[]; document.querySelectorAll('#pko-ctab .pko-cin').forEach(i=>{ const orig=pkR2(i.dataset.orig), v=pkR2(pkN(i.value)); if(Math.abs(v-orig)>0.004) ch.push({name:i.dataset.name,orig,v}); });
+  const nw=pkOpenReadNew('pko-ctab',n=>pkCustomers().some(x=>v24Nz(x)===v24Nz(n)),'عميل'); if(nw.bad){alert(nw.bad);return;}
+  if(!ch.length&&!nw.out.length){alert('مفيش أي تغيير في الأرصدة');return;}
+  const msg=[...ch.map(x=>'• '+x.name+': '+pkF(x.orig,2)+' ← '+pkF(x.v,2)),...nw.out.map(x=>'• '+x.name+' (جديد): '+pkF(x.v,2))].join('\n');
+  if(!confirm('هتتسجّل الأرصدة الافتتاحية دي بتاريخ '+date+':\n'+msg+'\n\nتكمل؟')) return;
+  const who=v24Who();
+  ch.forEach(x=>{ V24D.pkAcct=V24D.pkAcct.filter(a=>!(a.customer===x.name&&a.kind==='opening')); if(Math.abs(x.v)>0.004) V24D.pkAcct.push({id:pkNextAcctId(),date,customer:x.name,kind:'opening',amount:x.v,ref:'',note:'رصيد افتتاحي',createdBy:who}); });
+  nw.out.forEach(x=>V24D.pkAcct.push({id:pkNextAcctId(),date,customer:x.name,kind:'opening',amount:x.v,ref:'',note:'رصيد افتتاحي',createdBy:who}));
+  DB.save('pkAcct',V24D.pkAcct); pkRenderOpen();
+}
+function pkOpenSaveS(){
+  if(!v24Can('write')){alert('مفيش صلاحية تعديل');return;}
+  const date=v24v('pko-sdate'); if(!date){alert('اختار تاريخ سريان الرصيد الافتتاحي');return;}
+  const ch=[]; document.querySelectorAll('#pko-stab .pko-sin').forEach(i=>{ const orig=pkR2(i.dataset.orig), v=pkR2(pkN(i.value)); if(Math.abs(v-orig)>0.004) ch.push({name:i.dataset.name,orig,v}); });
+  const nw=pkOpenReadNew('pko-stab',n=>v24PsList().some(x=>v24Nz(x)===v24Nz(n)),'مورد'); if(nw.bad){alert(nw.bad);return;}
+  if(!ch.length&&!nw.out.length){alert('مفيش أي تغيير في الأرصدة');return;}
+  const msg=[...ch.map(x=>'• '+x.name+': '+pkF(x.orig,2)+' ← '+pkF(x.v,2)),...nw.out.map(x=>'• '+x.name+' (جديد): '+pkF(x.v,2))].join('\n');
+  if(!confirm('هتتسجّل الأرصدة الافتتاحية دي اعتبارًا من '+date+':\n'+msg+'\n\n(فواتير وحركات المورد قبل التاريخ ده هتتجاهل.) تكمل؟')) return;
+  const o=Object.assign({},v24Cfg('pkSupOpen',{})||{});
+  ch.forEach(x=>{ if(Math.abs(x.v)<0.005) delete o[x.name]; else o[x.name]={amount:x.v,date}; });
+  nw.out.forEach(x=>{ o[x.name]={amount:x.v,date}; });
+  if(nw.out.length){ const l=(v24Cfg('pkSupList',[])||[]).slice(); nw.out.forEach(x=>l.push(x.name)); v24SetCfg('pkSupList',l); const hd=(v24Cfg('pkSupHidden',[])||[]).filter(h=>!nw.out.some(x=>x.name===h)); v24SetCfg('pkSupHidden',hd); }
+  v24SetCfg('pkSupOpen',o); pkRenderOpen();
+}
+
 // ================= v24 — تركيب الصفحات والتهيئة =================
 (function v24Boot(){
   v24InitLast();
@@ -11545,6 +11611,7 @@ function pkNewLedReceipt(){ pkNewLed(); const k=document.getElementById('pkl-kin
   v24AddPage('packaging','pk-stock','📦 مخزن الكوفير',pkRenderStock,`<div class="p-content"><div class="v24-warn">مخزن الكوفير مستقل عن مخزون مصنع الحقن. الرصيد = رصيد أول المدة + الإضافات − الصرف (والتقييم بالمتوسط المتحرك).</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><select id="pks-g" onchange="pkRenderStock()" style="padding:6px 10px"></select><input id="pks-q" placeholder="🔍 بحث بالاسم" oninput="pkRenderStock()" style="padding:6px 10px"><label style="font-size:12px"><input type="checkbox" id="pks-nz" onchange="pkRenderStock()"> الأصناف برصيد فقط</label><button class="btn btn-primary" id="pks-open" onclick="pkOpeningForm()">📋 رصيد أول المدة</button><button class="btn btn-primary" id="pks-mv" onclick="pkMoveNew()">➕ حركة مخزن</button><button class="btn" id="pks-add" onclick="pkNewItem()">➕ صنف جديد</button><button class="btn" id="pks-sheet" onclick="pkLoadSheetItems()">📥 تحميل أصناف الشيت (92)</button></div><div id="pks-form"></div><div class="v24-kpis" id="pks-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pks-body"></div></div><div id="pks-card"></div><div id="pks-recent" style="margin-top:10px"></div></div>`);
   v24AddPage('packaging','pk-purch','🧾 فواتير الشراء',pkRenderPurch,`<div class="p-content"><div class="v24-warn">كل فاتورة شراء بتضيف أصنافها للمخزن تلقائيًا، وتسجّل المدفوع كمصروف في خزنة الكوفير (اختياري). المشتريات القديمة اللي اتسددت قبل كده موجودة في الخزنة — متدخلهاش تاني هنا إلا لو عايز تضيف أصنافها للمخزن عن طريق «حركة مخزن» بدل الفاتورة.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pkp-filter"></span><button class="btn btn-primary" id="pkp-add" onclick="pkPurchNew()">➕ فاتورة شراء</button></div><div id="pkp-form"></div><div class="v24-kpis" id="pkp-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pkp-body"></div></div></div>`);
   v24AddPage('packaging','pk-sinv','🧾 فواتير البيع (أصناف)',pkRenderSInv,`<div class="p-content"><div class="v24-warn">فاتورة بيع باسم العميل وفيها أكتر من صنف: بتسجّل نفسها في حساب العميل (آجل أو نقدي أو دفعة جزئية) وبتصرف الأصناف من مخزن الكوفير تلقائيًا. التعديل أو الحذف من هنا بيصلّح الحساب والمخزن معًا.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><span id="pksi-filter"></span><select id="pksi-c" onchange="pkRenderSInv()" style="padding:6px 10px"><option value="">كل العملاء</option></select><button class="btn btn-primary" id="pksi-add" onclick="pkSINew()">➕ فاتورة بيع</button></div><div id="pksi-form"></div><div class="v24-kpis" id="pksi-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pksi-body"></div></div></div>`);
+  v24AddPage('packaging','pk-open','📌 أرصدة افتتاحية',pkRenderOpen,`<div class="p-content"><div class="v24-warn">أرصدة أول المدة لكل العملاء والموردين في شاشة واحدة. رصيد العميل بيتسجل كحركة «رصيد سابق» في حسابه، ورصيد المورد بيتسجل كرصيد أول المدة بتاعه (وبيظهر في صفحة حسابات الموردين). التغيير بيتأكد منك قبل ما يتحفظ، وتقدر تضيف عميل أو مورد جديد برصيده.</div><div id="pko-body"></div></div>`);
   v24AddPage('packaging','pk-pricing','🧮 تسعير الكوفير',pkRenderPricing,`<div class="p-content"><div class="v24-warn">السعر = (مكونات الكوفير من متوسط سعر الشراء في المخزن + الكرتونة + كيس التغليف + العمالة) × (1 + هامش الربح). أي تغيير في أسعار الشراء بيتحسب تلقائيًا.</div><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pkpc-add" onclick="pkNewPricing()">➕ تسعيرة جديدة</button></div><div id="pkpc-cfg" style="margin-bottom:10px"></div><div id="pkpc-form"></div><div id="pkpc-body"></div></div>`);
   v24AddPage('packaging','pk-quote','🧮 حاسبة السعر',pkRenderQuote,`<div class="p-content"><div class="v24-warn">اكتب مكونات الكوفير وحدد الكيس، وهيظهر لك السعر النهائي فورًا. السعر بيتحسب تلقائيًا من إعدادات الإدارة.</div><div id="pkq-form"></div><h3 style="margin:16px 0 8px">التسعيرات المحفوظة</h3><div id="pkq-list"></div></div>`);
   v24AddPage('packaging','pk-analysis','📊 تحليل الأداء',pkRenderAnalysis,`<div class="p-content"><div style="margin-bottom:10px" id="pk-an-filter"></div><div class="v24-kpis" id="pk-an-kpis"></div><div id="pk-an-advice" style="margin-bottom:10px"></div><div id="pk-an-body"></div><div class="v24-card"><b>إعدادات الماكينة</b> <span style="font-size:11px;color:#888">(للمدير)</span><div class="form-row"><div class="form-group"><label>اسم الماكينة</label><input id="pk-name"></div><div class="form-group"><label>السرعة المعيارية (عبوة/دقيقة)</label><input id="pk-speed" type="number" min="1"></div><div class="form-group" style="display:flex;align-items:flex-end"><button class="btn" onclick="pkSaveCfg()">حفظ</button></div></div></div></div>`);
