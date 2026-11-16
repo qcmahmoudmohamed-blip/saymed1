@@ -11689,6 +11689,139 @@ function pkOpenSaveS(){
   v24SetCfg('pkSupOpen',o); pkRenderOpen();
 }
 
+// ================= مطابقة كشف حساب مورد (دفتر المورد) =================
+// كشف علاء كرييتف من دفتره (برنامج الأمين): رصيد أول المدة + فواتير «مبيع» + مدفوعاتنا. اللي موجود بيظهر «موجودة» ومبيتضافش تاني.
+// الشيك 90,000 (4/2) واستبداله (4/20) متعادلين في الكشف فمش داخلين، وبدله شيك 96,000 بتاريخ 4/20.
+const V24_SUPSTM={id:'sup-2026-11-15-alaa',title:'كشف حساب علاء كرييتف من دفتر المورد — من 1/1 لحد 9/11/2026',sup:{
+ 'علاء موسى (كرييتف دي باك)':{open:{amount:140289,date:'2026-01-01'},sheet:['2026-11-09',178104],checks:[['2026-11-07',35704]],win:{buy:3,pay:4},
+ buy:[
+  ['2026-02-10',130300,'فاتورة مبيع 80'],
+  ['2026-02-18',125900,'فاتورة مبيع 97'],
+  ['2026-03-12',62200,'فاتورة مبيع 137'],
+  ['2026-03-12',34550,'فاتورة مبيع 138'],
+  ['2026-03-31',132970,'فاتورة مبيع 159'],
+  ['2026-04-20',42045,'فاتورة مبيع 178'],
+  ['2026-05-11',118590,'فاتورة مبيع 201'],
+  ['2026-06-21',154500,'فاتورة مبيع 253'],
+  ['2026-06-30',88950,'فاتورة مبيع 274'],
+  ['2026-07-29',156310,'فاتورة مبيع 310'],
+  ['2026-08-16',127500,'فاتورة مبيع 330'],
+  ['2026-09-07',172300,'فاتورة مبيع 365'],
+  ['2026-10-13',147300,'فاتورة مبيع 422'],
+  ['2026-11-08',142400,'فاتورة مبيع 463']
+],
+ pay:[
+  ['2026-02-04',50000,'تحويل (سند 805)'],
+  ['2026-02-10',40000,'دفع كاش (سند 1010)'],
+  ['2026-02-15',69000,'تحويل (سند 1142)'],
+  ['2026-02-18',2000,'إيجار نقل على فاتورة 97 (سند 1199)'],
+  ['2026-02-24',21000,'تحويل (سند 1268)'],
+  ['2026-03-01',20000,'تحويل (سند 1390)'],
+  ['2026-03-04',25000,'تحويل (سند 1415)'],
+  ['2026-03-09',70000,'تحويل (سند 1534)'],
+  ['2026-03-15',25000,'تحويل (سند 1570)'],
+  ['2026-03-26',45000,'تحويل 30000+15000 (سند 1628)'],
+  ['2026-03-31',50000,'تحويل (سند 1654)'],
+  ['2026-04-01',35000,'تحويل (سند 1655)'],
+  ['2026-04-02',30000,'تحويل (سند 1825)'],
+  ['2026-04-05',25000,'تحويل (سند 1835)'],
+  ['2026-04-10',20000,'تحويل (سند 1856)'],
+  ['2026-04-20',96000,'دفع بشيك مستحق (سند 1966)'],
+  ['2026-05-05',45000,'تحويل (سند 2251)'],
+  ['2026-05-21',20000,'تحويل (سند 2533)'],
+  ['2026-05-26',40000,'تحويل (سند 2534)'],
+  ['2026-06-11',25000,'تحويل (سند 2810)'],
+  ['2026-06-16',50000,'تحويل (سند 2954)'],
+  ['2026-06-25',30000,'تحويل (سند 3140)'],
+  ['2026-07-06',30000,'تحويل (سند 3258)'],
+  ['2026-07-18',40000,'تحويل (سند 3525)'],
+  ['2026-07-21',40000,'تحويل (سند 3542)'],
+  ['2026-07-27',30000,'تحويل (سند 3541)'],
+  ['2026-07-30',40000,'دفع كاش (سند 3598)'],
+  ['2026-08-11',70000,'تحويل (سند 3759)'],
+  ['2026-08-18',70000,'تحويل (سند 3814)'],
+  ['2026-08-29',35000,'تحويل 10500+24500 (سند 3884)'],
+  ['2026-09-04',50000,'تحويل 40000+10000 (سند 3921)'],
+  ['2026-09-10',75000,'تحويلين 30000+45000 (سندات 3990 و3991)'],
+  ['2026-09-22',40000,'تحويل 20000+20000 (سند 4085)'],
+  ['2026-10-08',60000,'تحويلين 30000+30000 (سندات 4287 و4288)'],
+  ['2026-10-19',100000,'تحويل 50000+50000 (سند 4471)'],
+  ['2026-10-30',45000,'تحويل 20000+10000+15000 (سند 4619)'],
+  ['2026-11-07',40000,'تحويل (سند 4661)']
+]}}};
+function v24SsList(){ return [V24_SUPSTM]; }
+function v24SsBal(s,upto,open,addBuys,addPays){
+  const from=open.date; const ok=d=>d>=from&&(!upto||d<=upto); let run=Number(open.amount)||0;
+  (V24D.pkPurch||[]).filter(p=>p.supplier===s&&ok(p.date)).forEach(p=>run+=Number(p.total)||0);
+  (v24Cfg('pkSupEntries',[])||[]).filter(e=>e.supplier===s&&ok(e.date)).forEach(e=>run+=e.kind==='purchase'?Number(e.amount):-Number(e.amount));
+  (V24D.pkLedger||[]).filter(l=>l.kind==='cost'&&l.category===s&&ok(l.date)).forEach(l=>run-=Number(l.amount)||0);
+  addBuys.filter(r=>ok(r.d)).forEach(r=>run+=r.m); addPays.filter(r=>ok(r.d)).forEach(r=>run-=r.m);
+  return Math.round(run*100)/100;
+}
+function v24SsPlan(){
+  const out=[]; const lg=(v24Cfg('pkSupStmLog',[])||[]).filter(l=>!l.undone);
+  v24SsList().forEach(B=>Object.entries(B.sup).forEach(([s,o])=>{
+    const W=o.win||{}, used=new Set(); const curOpen=(v24Cfg('pkSupOpen',{})||{})[s]||null;
+    const openSame=!!curOpen&&Math.abs((+curOpen.amount||0)-o.open.amount)<0.5; const eo=openSame?{amount:+curOpen.amount,date:curOpen.date||o.open.date}:o.open;
+    const entries=(v24Cfg('pkSupEntries',[])||[]).filter(e=>e.supplier===s&&e.kind==='purchase');
+    const buys=o.buy.map(([d,m,n],i)=>({d,m,n,key:B.id+':'+s+':b'+i,exists:false,ex:null}));
+    buys.forEach(r=>{ const e=entries.find(x=>x.importKey===r.key); if(e){ r.exists=true; r.ex=+e.amount; used.add('e'+e.id); } });
+    buys.forEach(r=>{ if(r.exists) return; const w=W.buy||3;
+      const c=[...(V24D.pkPurch||[]).filter(p=>p.supplier===s).map(p=>({k:'p'+p.id,d:p.date,a:+p.total||0})),...entries.map(e=>({k:'e'+e.id,d:e.date,a:+e.amount||0}))].filter(x=>!used.has(x.k)&&Math.abs(x.a-r.m)<=Math.max(0.01,r.m*0.005)&&v24PiDay(x.d,r.d)<=w).sort((x,y)=>v24PiDay(x.d,r.d)-v24PiDay(y.d,r.d))[0];
+      if(c){ r.exists=true; r.ex=c.a; used.add(c.k); } });
+    const pays=o.pay.map(([d,m,n],i)=>({d,m,n,key:B.id+':'+s+':p'+i,exists:false}));
+    const led=(V24D.pkLedger||[]).filter(l=>l.kind==='cost'&&l.category===s&&!l.purchId);
+    pays.forEach(r=>{ const l=led.find(x=>x.importKey===r.key); if(l){ r.exists=true; used.add('l'+l.id); } });
+    pays.forEach(r=>{ if(r.exists) return; const w=W.pay||4;
+      const c=led.filter(x=>!used.has('l'+x.id)&&Math.abs((+x.amount||0)-r.m)<0.01&&v24PiDay(x.date,r.d)<=w).sort((x,y)=>v24PiDay(x.date,r.d)-v24PiDay(y.date,r.d))[0];
+      if(c){ r.exists=true; used.add('l'+c.id); } });
+    const nb=buys.filter(r=>!r.exists), np=pays.filter(r=>!r.exists);
+    out.push({batch:B.id,s,open:o.open,eo,curOpen,openSame,buys,pays,sheet:o.sheet,
+      checks:(o.checks||[]).map(([d,bal])=>({d,bal,after:v24SsBal(s,d,eo,nb,np)})),
+      after:v24SsBal(s,o.sheet[0],eo,nb,np),cur:v24PsRows(s).bal,curAfter:v24SsBal(s,null,eo,nb,np)});
+  }));
+  return {sup:out,logged:lg.length>0};
+}
+function v24RenderSupStm(){
+  const el=document.getElementById('ss-body'); if(!el) return; const p=v24SsPlan();
+  const chk=(lbl,bal,after)=>{ const d=after-bal; return `${lbl}: <b>${fmt(bal)}</b> | رصيد البرنامج بعد التنفيذ: <b>${fmt(after)}</b> | الفرق: <b style="color:${Math.abs(d)<1?'#2e7d32':'#c62828'}">${Math.abs(d)<1?'مطابق ✔':fmt(d)}</b>`; };
+  let html=`<div class="v24-warn">المشتريات الآجلة بتتسجل في حساب المورد (مش بتأثر في الخزنة). أما المدفوعات الناقصة فبتتسجل كدفعة من خزنة التعبئة وبتنقص رصيدها. أي حاجة موجودة بتظهر «موجودة» ومبتتضافش تاني ومفيش حاجة موجودة بتتحذف. خد نسخة احتياطية الأول، وفي زرار تراجع.</div>`;
+  v24SsList().forEach(B=>{
+    const cs=p.sup.filter(x=>x.batch===B.id);
+    html+=`<h4 style="margin:18px 0 2px">${v24Esc(B.title)}</h4>`+cs.map(x=>{ const nb=x.buys.filter(r=>!r.exists).length, np=x.pays.filter(r=>!r.exists).length, no=x.openSame?0:1;
+      const tbl=(rows,lbl)=>`<table class="v24-table" style="margin-top:6px"><thead><tr><th>التاريخ</th><th>${lbl}</th><th>المبلغ</th><th>الحالة</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.d}</td><td style="font-size:11px">${v24Esc(r.n)}</td><td>${fmt(r.m)}</td><td>${r.exists?'موجودة'+((r.ex!=null&&Math.abs(r.ex-r.m)>0.01)?' <span style="font-size:10px;color:#b26a00">(بمبلغ '+fmt(r.ex)+')</span>':''):'<b style="color:#0f6e56">هتتضاف</b>'}</td></tr>`).join('')}</tbody></table>`;
+      return `<div class="card" style="margin-top:10px"><div class="card-body" style="padding:10px;overflow:auto"><b>${v24Esc(x.s)}</b>
+      <div style="font-size:12px;margin:6px 0">رصيد أول المدة (القيد الافتتاحي ${x.open.date}): <b>${fmt(x.open.amount)}</b> — ${x.openSame?'موجود'+(x.curOpen.date!==x.open.date?' (بتاريخ '+x.curOpen.date+')':''):x.curOpen?'<b style="color:#b26a00">هيتغير من '+fmt(+x.curOpen.amount)+' ('+x.curOpen.date+')</b>':'<b style="color:#0f6e56">هيتسجل</b>'}</div>
+      ${tbl(x.buys,'فواتير مبيع المورد (مشتريات آجلة)')}${tbl(x.pays,'المدفوعات (دائن)')}
+      <div style="font-size:12px;margin-top:8px;line-height:1.9">${x.checks.map(k=>chk('رصيد الكشف في '+k.d,k.bal,k.after)).join('<br>')}${x.checks.length?'<br>':''}${chk('رصيد الكشف في '+x.sheet[0],x.sheet[1],x.after)}<br>رصيد البرنامج الحالي: ${fmt(x.cur)} ← ${fmt(x.curAfter)}</div>
+      <div style="margin-top:8px"><button class="btn btn-primary" onclick="v24SsApply('${B.id}','${v24Esc(x.s)}')" ${(nb||np||no)?'':'disabled'}>✅ تنفيذ (${no?'رصيد أول المدة + ':''}${nb} مشتريات + ${np} دفعة)</button></div></div></div>`; }).join('');
+  });
+  html+=`<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="exportData()">💾 نسخة احتياطية كاملة</button>${p.logged?'<button class="btn" style="color:var(--c-danger)" onclick="v24SsUndo()">↩️ تراجع عن آخر تنفيذ</button>':''}</div>`;
+  el.innerHTML=html;
+}
+function v24SsApply(batchId,sup){
+  if(!v24Can('write')){ alert('مفيش صلاحية تعديل'); return; }
+  const x=v24SsPlan().sup.find(y=>y.batch===batchId&&y.s===sup); if(!x) return;
+  const nb=x.buys.filter(r=>!r.exists), np=x.pays.filter(r=>!r.exists), setOpen=!x.openSame; if(!nb.length&&!np.length&&!setOpen) return;
+  const parts=[]; if(setOpen) parts.push('رصيد أول المدة '+fmt(x.open.amount)); if(nb.length) parts.push(nb.length+' فاتورة مشتريات آجلة'); if(np.length) parts.push(np.length+' دفعة ('+fmt(np.reduce((t,r)=>t+r.m,0))+' بتنزل من خزنة التعبئة)');
+  if(!confirm('هيتسجل لـ «'+sup+'»: '+parts.join(' + ')+'. عملت نسخة احتياطية؟ نكمل؟')) return;
+  const who=v24Who(); let prevOpen=null;
+  if(setOpen){ const op=Object.assign({},v24Cfg('pkSupOpen',{})||{}); prevOpen=op[sup]||null; op[sup]={amount:x.open.amount,date:x.open.date}; v24SetCfg('pkSupOpen',op); }
+  const eids=[], lids=[];
+  if(nb.length){ const l=(v24Cfg('pkSupEntries',[])||[]).slice(); let id=l.reduce((m,e)=>Math.max(m,e.id),0)+1; nb.forEach(r=>{ l.push({id:id,supplier:sup,date:r.d,kind:'purchase',amount:r.m,note:r.n+' — من كشف المورد',importKey:r.key,importBatch:batchId}); eids.push(id++); }); v24SetCfg('pkSupEntries',l); }
+  if(np.length){ let id=V24D.pkLedger.reduce((m,e)=>Math.max(m,e.id),0)+1; np.forEach(r=>{ V24D.pkLedger.push({id:id,date:r.d,kind:'cost',category:sup,amount:r.m,desc:'سداد — '+r.n+' — من كشف المورد',ref:'',createdBy:who,importKey:r.key,importBatch:batchId}); lids.push(id++); }); DB.save('pkLedger',V24D.pkLedger); }
+  const lg=(v24Cfg('pkSupStmLog',[])||[]).slice(); lg.push({id:batchId,sup,at:new Date().toISOString(),eids,lids,setOpen,prevOpen}); v24SetCfg('pkSupStmLog',lg);
+  alert('اتنفذ: '+parts.join(' + ')+'.'); v24RenderSupStm();
+}
+function v24SsUndo(){
+  const lg=(v24Cfg('pkSupStmLog',[])||[]).slice(); const i=lg.map(l=>!l.undone).lastIndexOf(true); if(i<0) return; const g=lg[i];
+  if(!confirm('هتشيل اللي اتضاف في آخر تنفيذ لـ «'+g.sup+'» (المشتريات والدفعات'+(g.setOpen?' ورصيد أول المدة':'')+'). متأكد؟')) return;
+  if(g.eids&&g.eids.length) v24SetCfg('pkSupEntries',(v24Cfg('pkSupEntries',[])||[]).filter(e=>g.eids.indexOf(e.id)<0));
+  if(g.lids&&g.lids.length){ V24D.pkLedger=V24D.pkLedger.filter(l=>g.lids.indexOf(l.id)<0); DB.save('pkLedger',V24D.pkLedger); }
+  if(g.setOpen){ const op=Object.assign({},v24Cfg('pkSupOpen',{})||{}); if(g.prevOpen) op[g.sup]=g.prevOpen; else delete op[g.sup]; v24SetCfg('pkSupOpen',op); }
+  g.undone=true; v24SetCfg('pkSupStmLog',lg); v24RenderSupStm();
+}
+
 // ================= v24 — تركيب الصفحات والتهيئة =================
 (function v24Boot(){
   v24InitLast();
@@ -11717,6 +11850,7 @@ function pkOpenSaveS(){
   v24AddPage('packaging','pk-purch','🧾 فواتير الشراء',pkRenderPurch,`<div class="p-content"><div class="v24-warn">كل فاتورة شراء بتضيف أصنافها للمخزن تلقائيًا، وتسجّل المدفوع كمصروف في خزنة الكوفير (اختياري). المشتريات القديمة اللي اتسددت قبل كده موجودة في الخزنة — متدخلهاش تاني هنا إلا لو عايز تضيف أصنافها للمخزن عن طريق «حركة مخزن» بدل الفاتورة.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><span id="pkp-filter"></span><button class="btn btn-primary" id="pkp-add" onclick="pkPurchNew()">➕ فاتورة شراء</button></div><div id="pkp-form"></div><div class="v24-kpis" id="pkp-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pkp-body"></div></div></div>`);
   v24AddPage('packaging','pk-sinv','🧾 فواتير البيع (أصناف)',pkRenderSInv,`<div class="p-content"><div class="v24-warn">فاتورة بيع باسم العميل وفيها أكتر من صنف: بتسجّل نفسها في حساب العميل (آجل أو نقدي أو دفعة جزئية) وبتصرف الأصناف من مخزن الكوفير تلقائيًا. التعديل أو الحذف من هنا بيصلّح الحساب والمخزن معًا.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><span id="pksi-filter"></span><select id="pksi-c" onchange="pkRenderSInv()" style="padding:6px 10px"><option value="">كل العملاء</option></select><button class="btn btn-primary" id="pksi-add" onclick="pkSINew()">➕ فاتورة بيع</button></div><div id="pksi-form"></div><div class="v24-kpis" id="pksi-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pksi-body"></div></div></div>`);
   v24AddPage('packaging','pk-open','📌 أرصدة افتتاحية',pkRenderOpen,`<div class="p-content"><div class="v24-warn">أرصدة أول المدة لكل العملاء والموردين في شاشة واحدة. رصيد العميل بيتسجل كحركة «رصيد سابق» في حسابه، ورصيد المورد بيتسجل كرصيد أول المدة بتاعه (وبيظهر في صفحة حسابات الموردين). التغيير بيتأكد منك قبل ما يتحفظ، وتقدر تضيف عميل أو مورد جديد برصيده.</div><div id="pko-body"></div></div>`);
+  v24AddPage('packaging','pk-supstm','🏭 مطابقة كشف مورد',v24RenderSupStm,`<div class="p-content"><div id="ss-body"></div></div>`);
   v24AddPage('packaging','pk-pricing','🧮 تسعير الكوفير',pkRenderPricing,`<div class="p-content"><div class="v24-warn">السعر = (مكونات الكوفير من متوسط سعر الشراء في المخزن + الكرتونة + كيس التغليف + العمالة) × (1 + هامش الربح). أي تغيير في أسعار الشراء بيتحسب تلقائيًا.</div><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pkpc-add" onclick="pkNewPricing()">➕ تسعيرة جديدة</button></div><div id="pkpc-cfg" style="margin-bottom:10px"></div><div id="pkpc-form"></div><div id="pkpc-body"></div></div>`);
   v24AddPage('packaging','pk-quote','🧮 حاسبة السعر',pkRenderQuote,`<div class="p-content"><div class="v24-warn">اكتب مكونات الكوفير وحدد الكيس، وهيظهر لك السعر النهائي فورًا. السعر بيتحسب تلقائيًا من إعدادات الإدارة.</div><div id="pkq-form"></div><h3 style="margin:16px 0 8px">التسعيرات المحفوظة</h3><div id="pkq-list"></div></div>`);
   v24AddPage('packaging','pk-analysis','📊 تحليل الأداء',pkRenderAnalysis,`<div class="p-content"><div style="margin-bottom:10px" id="pk-an-filter"></div><div class="v24-kpis" id="pk-an-kpis"></div><div id="pk-an-advice" style="margin-bottom:10px"></div><div id="pk-an-body"></div><div class="v24-card"><b>إعدادات الماكينة</b> <span style="font-size:11px;color:#888">(للمدير)</span><div class="form-row"><div class="form-group"><label>اسم الماكينة</label><input id="pk-name"></div><div class="form-group"><label>السرعة المعيارية (عبوة/دقيقة)</label><input id="pk-speed" type="number" min="1"></div><div class="form-group" style="display:flex;align-items:flex-end"><button class="btn" onclick="pkSaveCfg()">حفظ</button></div></div></div></div>`);
