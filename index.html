@@ -11822,6 +11822,179 @@ function v24SsUndo(){
   g.undone=true; v24SetCfg('pkSupStmLog',lg); v24RenderSupStm();
 }
 
+// ================= قائمة الأرباح والخسائر — التعبئة والتغليف =================
+// أساس الاستحقاق: الإيراد = فواتير البيع (آجل + نقدي) بتاريخ الفاتورة − المرتجعات/الخصومات + إيرادات الخزنة؛ التحصيلات والأرصدة الافتتاحية مش إيراد.
+//   تكلفة المورد اللي ليه «رصيد أول مدة» مسجل = مشتريات المورد (فواتير + مشتريات آجلة − مرتجعات)، وغيره = المدفوع من الخزنة.
+// الأساس النقدي: الإيراد = التحصيلات + إيرادات الخزنة، والتكلفة = كل المدفوع من الخزنة.
+// تكلفة المبيعات = مخزون أول المدة + مشتريات الخامات − مخزون آخر المدة (قيمة المخزون بتتكتب يدويًا لكل شهر).
+const PK_PL_MAP={frt:['نوالين كوفير','نقل'],sal:['مرتبات الكوفير','عمالة'],rent:['ايجار الكوفير','إيجار / نصيب'],elec:['كهرباء الكوفير','كهرباء'],mnt:['صيانة الكوفير','صيانة وقطع غيار']};
+const PK_PL_OPX=[['sal','مرتبات وعمالة'],['rent','إيجار'],['elec','كهرباء'],['mnt','صيانة وقطع غيار'],['frt','نقل ونولون'],['oth','مصروفات أخرى']];
+function pkPlGroup(cat){ for(const g of Object.keys(PK_PL_MAP)) if(PK_PL_MAP[g].indexOf(cat)>=0) return g; if(['خامات / فيلم','مواد تعبئة'].indexOf(cat)>=0||v24PsList().indexOf(cat)>=0||(V24D.pkPurch||[]).some(p=>p.supplier===cat)) return 'mat'; return 'oth'; }
+function pkPlMonths(from,to){ const out=[]; let y=+from.slice(0,4), m=+from.slice(5,7); const ty=+to.slice(0,4), tm=+to.slice(5,7); while((y<ty||(y===ty&&m<=tm))&&out.length<36){ out.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){ m=1; y++; } } return out; }
+function pkPlPrev(mk){ let y=+mk.slice(0,4), m=+mk.slice(5,7)-1; if(m<1){ m=12; y--; } return y+'-'+String(m).padStart(2,'0'); }
+function pkPlF(v){ v=Math.round((+v||0)*100)/100; return v===0?'—':(v<0?'<span style="color:#c62828">('+pkF(-v)+')</span>':pkF(v)); }
+function pkPlCompute(from,to,basis){
+  const ms=pkPlMonths(from,to), n=ms.length, ix={}; ms.forEach((m,i)=>{ ix[m]=i; });
+  const Z=()=>Array(n).fill(0), put=(a,d,v)=>{ const i=ix[String(d||'').slice(0,7)]; if(i!==undefined) a[i]+=v; };
+  const sum=a=>a.reduce((t,x)=>t+x,0), plus=(...as)=>as[0].map((_,i)=>as.reduce((t,a)=>t+a[i],0));
+  // الإيرادات
+  const sales=Z(), rets=Z(), coll=Z(), cashRev=Z(), opr=Z(), oth=Z();
+  V24D.pkAcct.forEach(a=>{ const m=pkN(a.amount); if(a.kind==='sale_credit'||a.kind==='sale_cash') put(sales,a.date,m); if(a.kind==='return') put(rets,a.date,-m); if(a.kind==='receipt'||a.kind==='sale_cash') put(coll,a.date,m); });
+  V24D.pkLedger.forEach(l=>{ if(l.kind==='revenue'){ const m=pkN(l.amount); put(l.category==='مبيعات تعبئة'?cashRev:l.category==='أجر تشغيل لحساب الغير'?opr:oth,l.date,m); } });
+  const rev=[]; if(basis==='cash') rev.push({l:'تحصيلات العملاء (قبض + بيع نقدي)',v:coll}); else { rev.push({l:'مبيعات العملاء (فواتير آجل ونقدي)',v:sales}); if(rets.some(x=>x)) rev.push({l:'مرتجعات وخصومات',v:rets}); }
+  rev.push({l:'مبيعات نقدية مسجلة في الخزنة',v:cashRev},{l:'أجر تشغيل لحساب الغير',v:opr},{l:'إيرادات أخرى',v:oth});
+  for(let i=rev.length-1;i>0;i--) if(!rev[i].v.some(x=>x)) rev.splice(i,1); // نخفي بنود الإيراد الفاضية
+  // التكاليف
+  const so=v24Cfg('pkSupOpen',{})||{}, entries=v24Cfg('pkSupEntries',[])||[], costs=V24D.pkLedger.filter(l=>l.kind==='cost');
+  const cats=new Set(); costs.forEach(l=>cats.add(l.category||'أخرى')); Object.keys(so).forEach(s=>cats.add(s));
+  const matL=[], oneach={sal:Z(),rent:Z(),elec:Z(),mnt:Z(),frt:Z()}, othL={};
+  [...cats].forEach(c=>{
+    const g=pkPlGroup(c);
+    if(g==='mat'||so[c]){
+      const v=Z(); let lbl=c;
+      if(basis==='accrual'&&so[c]){ (V24D.pkPurch||[]).filter(p=>p.supplier===c).forEach(p=>put(v,p.date,pkN(p.total))); entries.filter(e=>e.supplier===c).forEach(e=>put(v,e.date,e.kind==='purchase'?pkN(e.amount):-pkN(e.amount))); lbl=c+' — مشتريات (استحقاق)'; }
+      else { costs.filter(l=>(l.category||'أخرى')===c).forEach(l=>put(v,l.date,pkN(l.amount))); if(basis==='accrual') lbl=c+' — مدفوع'; }
+      if(v.some(x=>x)) matL.push({l:lbl,v});
+    } else if(oneach[g]) costs.filter(l=>(l.category||'أخرى')===c).forEach(l=>put(oneach[g],l.date,pkN(l.amount)));
+    else { const v=Z(); costs.filter(l=>(l.category||'أخرى')===c).forEach(l=>put(v,l.date,pkN(l.amount))); if(v.some(x=>x)) othL[c]=v; }
+  });
+  const opx=[]; PK_PL_OPX.forEach(([g,lbl])=>{ if(g==='oth'){ const v=Z(); Object.values(othL).forEach(a=>a.forEach((x,i)=>{ v[i]+=x; })); if(v.some(x=>x)) opx.push({l:lbl,v}); } else if(oneach[g].some(x=>x)) opx.push({l:lbl,v:oneach[g]}); });
+  // المخزون (يدوي)
+  const st=v24Cfg('pkPlStock',{})||{}, close=ms.map(m=>pkN(st[m])), open=ms.map((m,i)=>i?close[i-1]:pkN(st[pkPlPrev(m)]));
+  const netRev=plus(...rev.map(x=>x.v)), purch=matL.length?plus(...matL.map(x=>x.v)):Z();
+  const cogs=ms.map((_,i)=>open[i]+purch[i]-close[i]), gross=ms.map((_,i)=>netRev[i]-cogs[i]);
+  const opexTot=opx.length?plus(...opx.map(x=>x.v)):Z(), net=ms.map((_,i)=>gross[i]-opexTot[i]);
+  return {from,to,basis,ms,rev,matL,opx,open,close,netRev,purch,cogs,gross,opexTot,net,sum};
+}
+function pkPlModel(R){
+  const n=R.ms.length, sum=R.sum, M=[]; const ratio=(a,b)=>a.map((x,i)=>b[i]?x/b[i]:NaN);
+  const L=(label,v,o)=>M.push(Object.assign({t:'l',label,v,tot:sum(v)},o||{}));
+  M.push({t:'h',label:'الإيرادات'}); R.rev.forEach(x=>L(x.l,x.v));
+  M.push({t:'s',label:'صافي الإيرادات',v:R.netRev,tot:sum(R.netRev)});
+  M.push({t:'h',label:'تكلفة المبيعات'});
+  M.push({t:'op',label:'مخزون أول المدة',v:R.open,tot:R.open[0]||0});
+  R.matL.forEach(x=>L(x.l,x.v));
+  M.push({t:'in',label:'(−) مخزون آخر المدة',v:R.close,tot:R.close[n-1]||0});
+  M.push({t:'s',label:'تكلفة المبيعات',v:R.cogs,tot:sum(R.cogs)});
+  M.push({t:'t',label:'مجمل الربح',v:R.gross,tot:sum(R.gross)});
+  M.push({t:'p',label:'هامش مجمل الربح %',v:ratio(R.gross,R.netRev),tot:sum(R.netRev)?sum(R.gross)/sum(R.netRev):NaN});
+  M.push({t:'h',label:'مصروفات التشغيل'}); R.opx.forEach(x=>L(x.l,x.v));
+  M.push({t:'s',label:'إجمالي مصروفات التشغيل',v:R.opexTot,tot:sum(R.opexTot)});
+  M.push({t:'t',label:'صافي الربح / (الخسارة)',v:R.net,tot:sum(R.net)});
+  M.push({t:'p',label:'هامش صافي الربح %',v:ratio(R.net,R.netRev),tot:sum(R.netRev)?sum(R.net)/sum(R.netRev):NaN});
+  return M;
+}
+function pkPlTable(R,edit){
+  const M=pkPlModel(R), n=R.ms.length, w=edit&&v24Can('write'); const pc=x=>isFinite(x)?pkPct(x):'—';
+  const rows=M.map(r=>{
+    if(r.t==='h') return `<tr><td colspan="${n+2}" style="background:#eef3f7;font-weight:700">${r.label}</td></tr>`;
+    const bold=(r.t==='s'||r.t==='t'), bg=r.t==='t'?'background:#f5f5f0;':'', st=`${bg}${bold?'font-weight:700;border-top:1px solid #bbb;':''}`;
+    let cells;
+    if(r.t==='p') cells=r.v.map(x=>`<td style="font-size:11px;color:#666">${pc(x)}</td>`).join('')+`<td style="font-size:11px;color:#666">${pc(r.tot)}</td>`;
+    else if(r.t==='in'&&w) cells=r.v.map((x,i)=>`<td><input type="number" step="1" min="0" style="width:92px" value="${x||''}" onchange="pkPlSaveStock('${R.ms[i]}',this.value)"></td>`).join('')+`<td>${pkPlF(r.tot)}</td>`;
+    else if(r.t==='op'&&w) cells=r.v.map((x,i)=>i?`<td>${pkPlF(x)}</td>`:`<td><input type="number" step="1" min="0" style="width:92px" value="${x||''}" onchange="pkPlSaveStock('${pkPlPrev(R.ms[0])}',this.value)"></td>`).join('')+`<td>${pkPlF(r.tot)}</td>`;
+    else cells=r.v.map(x=>`<td>${pkPlF(x)}</td>`).join('')+`<td style="font-weight:700">${pkPlF(r.tot)}</td>`;
+    return `<tr style="${st}"><td style="${r.t==='l'?'padding-right:18px':''}">${v24Esc(r.label)}</td>${cells}</tr>`;
+  }).join('');
+  return `<table class="v24-table"><thead><tr><th style="min-width:240px">البند</th>${R.ms.map(m=>`<th>${m}</th>`).join('')}<th>الإجمالي</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function pkPlGet(){
+  const yr=today().slice(0,4); const f=document.getElementById('pkpl-from'), t=document.getElementById('pkpl-to'), b=document.getElementById('pkpl-basis');
+  let from=(f&&f.value)||yr+'-01', to=(t&&t.value)||today().slice(0,7); if(from>to){ const x=from; from=to; to=x; }
+  return pkPlCompute(from,to,(b&&b.value)||'accrual');
+}
+function pkRenderPL(){
+  const body=document.getElementById('pkpl-body'); if(!body) return;
+  const f=document.getElementById('pkpl-from'), t=document.getElementById('pkpl-to'); if(!f.value) f.value=today().slice(0,4)+'-01'; if(!t.value) t.value=today().slice(0,7);
+  const R=pkPlGet(), s=R.sum;
+  const kp=(l,v,c)=>`<div class="v24-kpi"><div class="l">${l}</div><div class="v" ${c?`style="color:${c}"`:''}>${v}</div></div>`;
+  const nr=s(R.netRev), gr=s(R.gross), nt=s(R.net);
+  document.getElementById('pkpl-kpis').innerHTML=kp('صافي الإيرادات',pkF(nr))+kp('مجمل الربح',pkF(gr),gr<0?'#c62828':'#2e7d32')+kp('صافي الربح / (الخسارة)',pkF(nt),nt<0?'#c62828':'#2e7d32')+kp('هامش صافي الربح',nr?pkPct(nt/nr):'—');
+  body.innerHTML=pkPlTable(R,true);
+  const accr=R.basis==='accrual', paid=R.matL.filter(x=>/ — مدفوع$/.test(x.l)).map(x=>x.l.replace(/ — مدفوع$/,'')), noStock=!R.close.some(x=>x)&&!R.open.some(x=>x);
+  document.getElementById('pkpl-note').innerHTML=(accr?'<b>أساس الاستحقاق:</b> الإيراد = فواتير البيع بتاريخها (التحصيلات والأرصدة الافتتاحية مش إيراد). تكلفة المورد اللي ليه رصيد أول مدة = مشتريات المورد، وغيره = المدفوع من الخزنة.':'<b>الأساس النقدي:</b> الإيراد = التحصيلات الفعلية، والتكلفة = كل المدفوع من الخزنة.')
+   +(accr&&paid.length?'<br>• موردين محسوبين بالمدفوع (مفيش رصيد أول مدة ليهم): '+paid.map(v24Esc).join('، ')+' — سجّل رصيد أول المدة وفواتيرهم في «حسابات الموردين» لتتحسب بالاستحقاق.':'')
+   +(noStock?'<br>• <b>مخزون آخر المدة مش مسجل:</b> التكلفة هنا = كل مشتريات الفترة، مش المستهلك فعلًا. اكتب قيمة المخزون آخر كل شهر في الصف المخصوص عشان تتظبط تكلفة المبيعات.':'')
+   +'<br>• الأرقام بتعتمد على اكتمال تسجيل المبيعات والمصروفات في البرنامج.';
+}
+function pkPlSaveStock(m,v){
+  if(!v24Can('write')){ alert('مفيش صلاحية تعديل'); return; }
+  const o=Object.assign({},v24Cfg('pkPlStock',{})||{}); const x=pkN(v); if(x) o[m]=x; else delete o[m]; v24SetCfg('pkPlStock',o); pkRenderPL();
+}
+function pkPlPrint(){
+  const R=pkPlGet(); const pw=window.open('','_blank'); if(!pw){ alert('المتصفح منع نافذة الطباعة — اسمح بالنوافذ المنبثقة وجرّب تاني'); return; }
+  pw.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>قائمة الأرباح والخسائر</title><style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#2c2c2a;font-size:11px;direction:rtl}h2{margin:0 0 4px;color:#0f7b6c}.sub{color:#666;margin-bottom:10px}table{width:100%;border-collapse:collapse}th,td{padding:4px 6px;border:1px solid #d3d1c7;text-align:right}th{background:#f5f5f0}</style></head><body><h2>${v24Esc(PK_INV_COMPANY)} — قائمة الأرباح والخسائر</h2><div class="sub">الفترة: ${R.from} إلى ${R.to} — ${R.basis==='accrual'?'أساس الاستحقاق':'الأساس النقدي'}</div>${pkPlTable(R,false)}<script>window.print()<\/script></body></html>`);
+  pw.document.close();
+}
+function pkPlCsv(){
+  const R=pkPlGet(), M=pkPlModel(R), r2=x=>Math.round((+x||0)*100)/100, pc=x=>isFinite(x)?(x*100).toFixed(1)+'%':'';
+  const rows=[['البند',...R.ms,'الإجمالي']];
+  M.forEach(r=>{ if(r.t==='h') rows.push([r.label]); else if(r.t==='p') rows.push([r.label,...r.v.map(pc),pc(r.tot)]); else rows.push([r.label,...r.v.map(r2),r2(r.tot)]); });
+  const csv='\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='قائمة_أرباح_وخسائر_التعبئة_'+R.from+'_'+R.to+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ================= إعادة تصنيف حركات الملاك: سلف / سداد سلف / سحب فعلي =================
+// القاعدة: كل مالك عنده رصيد سلف (رصيد 2025 + إيداعاته المكتوب عليها سلفة). أول سحوباته (بالترتيب الزمني) بتسدد السلف دي «سداد سلفة»،
+// وأي سحب زيادة عن كده «سحب فعلي» (حقوق ملكية). أحمد منصور ومخصصات بيطلعوا بره حسابات الملاك (التصنيف بيتغير لبند مش بتاع ملاك والفلوس بتفضل في الخزينة).
+const V24_OWN={id:'own-2026-11-15',out:{'احمد منصور':'تسوية حصة شريك سابق','مخصصات':'مصاريف أخرى'},owners:['محمود يوسف','احمد يوسف','احمد ابو عبده','احمد عادل'],open:{'احمد عادل':28000}};
+const V24_OWN_CAP='رأس مال / إيداع مالك', V24_OWN_LOAN='سلفة / تمويل من مالك', V24_OWN_REPAY='سداد سلفة / تمويل لمالك', V24_OWN_DRAW='سحب مالك / أرباح';
+(function(){ const a=TREASURY_CATEGORIES.out; if(a.indexOf('تسوية حصة شريك سابق')<0) a.push('تسوية حصة شريك سابق'); })();
+function v24OwnPlan(){
+  const T=treasury.slice(), nz=v24Nz, ob=(v24Cfg('openBal',{})||{}).owner||{};
+  const out=[]; Object.keys(V24_OWN.out).forEach(party=>{ T.filter(t=>nz(t.party||'')===nz(party)&&V24_OWNER_CATS.indexOf(t.category)>=0).forEach(t=>out.push({id:t.id,date:t.date,party:t.party||party,amount:+t.amount||0,from:t.category,to:V24_OWN.out[party],type:t.type})); });
+  const owners=V24_OWN.owners.map(name=>{
+    const rows=T.filter(t=>nz(t.party||'')===nz(name)), cur=v24OB('owner',name), target=V24_OWN.open[name], open=target!==undefined?target:cur;
+    const dep=rows.filter(t=>t.type==='in'&&(t.category===V24_OWN_CAP||t.category===V24_OWN_LOAN));
+    const wd=rows.filter(t=>t.type==='out'&&(t.category===V24_OWN_DRAW||t.category===V24_OWN_REPAY)).sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.id-b.id);
+    const adv=dep.reduce((s,t)=>s+(+t.amount||0),0); let remaining=open+adv, repaid=0, drawn=0; const changes=[];
+    dep.filter(t=>t.category===V24_OWN_CAP).forEach(t=>changes.push({id:t.id,date:t.date,amount:+t.amount||0,from:t.category,to:V24_OWN_LOAN,type:'in'}));
+    wd.forEach(t=>{ const a=+t.amount||0;
+      if(t.category===V24_OWN_REPAY){ remaining-=a; repaid+=a; return; }
+      const take=/راتب|مرتب/.test(t.desc||'')?0:Math.min(a,Math.max(remaining,0));
+      if(take>=a-0.005){ changes.push({id:t.id,date:t.date,amount:a,from:t.category,to:V24_OWN_REPAY,type:'out'}); remaining-=a; repaid+=a; }
+      else if(take>0.005){ changes.push({id:t.id,date:t.date,amount:a,from:t.category,to:V24_OWN_REPAY,type:'out',split:{repay:take,draw:a-take}}); remaining-=take; repaid+=take; drawn+=a-take; }
+      else drawn+=a; });
+    return {name,cur,open,openChange:(target!==undefined&&Math.abs(cur-target)>0.5)?{from:cur,to:target}:null,adv,repaid,drawn,loanLeft:Math.round(remaining*100)/100,changes};
+  });
+  return {out,owners};
+}
+function v24RenderOwnRe(){
+  const el=document.getElementById('ownre-body'); if(!el) return; const p=v24OwnPlan(); const n=p.out.length+p.owners.reduce((s,o)=>s+o.changes.length+(o.openChange?1:0),0);
+  const lg=(v24Cfg('ownLog',[])||[]).filter(l=>!l.undone);
+  const sum=a=>a.reduce((t,x)=>t+x,0);
+  el.innerHTML=`<div class="v24-warn">كل مالك: رصيد 2025 + إيداعاته (سلف). أول سحوباته بالترتيب الزمني بتسدد السلف («سداد سلفة»)، وأي سحب زيادة = «سحب فعلي». حركة واحدة بس ممكن تتقسم لكل مالك (جزء سداد وجزء سحب فعلي). الفلوس في الخزينة مبتتأثرش — التصنيف بس. خد نسخة احتياطية الأول، وفي زرار تراجع.</div>
+  <div class="card" style="margin-bottom:12px"><div class="card-body" style="padding:10px;overflow:auto"><b>الملاك بعد إعادة التصنيف</b>
+  <table class="v24-table" style="margin-top:6px"><thead><tr><th>المالك</th><th>رصيد 2025 (له)</th><th>سلف 2026</th><th>سداد سلف</th><th>سحب فعلي</th><th>المتبقي له كسلفة</th><th>تغييرات</th></tr></thead><tbody>${p.owners.map(o=>`<tr><td>${v24Esc(o.name)}</td><td>${fmt(o.open)}${o.openChange?' <span style="font-size:10px;color:#b26a00">(هيتعدل من '+fmt(o.openChange.from)+')</span>':''}</td><td>${fmt(o.adv)}</td><td>${fmt(o.repaid)}</td><td>${fmt(o.drawn)}</td><td><b>${fmt(o.loanLeft)}</b></td><td>${o.changes.length+(o.openChange?1:0)}</td></tr>`).join('')}</tbody><tfoot><tr><th>الإجمالي</th><th>${fmt(sum(p.owners.map(o=>o.open)))}</th><th>${fmt(sum(p.owners.map(o=>o.adv)))}</th><th>${fmt(sum(p.owners.map(o=>o.repaid)))}</th><th>${fmt(sum(p.owners.map(o=>o.drawn)))}</th><th>${fmt(sum(p.owners.map(o=>o.loanLeft)))}</th><th></th></tr></tfoot></table></div></div>
+  <div class="card" style="margin-bottom:12px"><div class="card-body" style="padding:10px;overflow:auto"><b>بره حسابات الملاك</b>${p.out.length?`<table class="v24-table" style="margin-top:6px"><thead><tr><th>التاريخ</th><th>الاسم</th><th>المبلغ</th><th>التصنيف الحالي</th><th>التصنيف الجديد</th></tr></thead><tbody>${p.out.map(x=>`<tr><td>${x.date}</td><td>${v24Esc(x.party)}</td><td>${fmt(x.amount)}</td><td style="font-size:11px">${v24Esc(x.from)}</td><td style="font-size:11px"><b>${v24Esc(x.to)}</b></td></tr>`).join('')}</tbody></table>`:'<div style="font-size:12px;color:#888;margin-top:6px">مفيش حاجة</div>'}</div></div>
+  <details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:13px">تفاصيل الحركات اللي هتتغير (${p.owners.reduce((s,o)=>s+o.changes.length,0)})</summary><div style="overflow:auto"><table class="v24-table" style="margin-top:6px"><thead><tr><th>التاريخ</th><th>المالك</th><th>المبلغ</th><th>من</th><th>إلى</th></tr></thead><tbody>${p.owners.flatMap(o=>o.changes.map(c=>`<tr><td>${c.date}</td><td>${v24Esc(o.name)}</td><td>${fmt(c.amount)}${c.split?' <span style="font-size:10px;color:#b26a00">(بتتقسم: '+fmt(c.split.repay)+' سداد + '+fmt(c.split.draw)+' سحب فعلي)</span>':''}</td><td style="font-size:11px">${v24Esc(c.from)}</td><td style="font-size:11px">${v24Esc(c.to)}</td></tr>`)).join('')||'<tr><td colspan="5" style="color:#888">لا تغييرات</td></tr>'}</tbody></table></div></details>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="v24OwnApply()" ${n?'':'disabled'}>✅ تنفيذ (${n} تغيير)</button><button class="btn" onclick="exportData()">💾 نسخة احتياطية كاملة</button>${lg.length?'<button class="btn" style="color:var(--c-danger)" onclick="v24OwnUndo()">↩️ تراجع عن آخر تنفيذ</button>':''}</div>`;
+}
+function v24OwnApply(){
+  if(!v24Can('write')){ alert('مفيش صلاحية تعديل'); return; }
+  const p=v24OwnPlan(); const all=[...p.out.map(x=>({...x,out:true})),...p.owners.flatMap(o=>o.changes)]; const openCh=p.owners.filter(o=>o.openChange);
+  if(!all.length&&!openCh.length) return;
+  if(!confirm('هيتغير تصنيف '+all.length+' حركة'+(openCh.length?' وهيتسجل رصيد افتتاحي 2025 لـ '+openCh.map(o=>o.name+' ('+fmt(o.openChange.to)+')').join('، '):'')+'. الفلوس في الخزينة مبتتأثرش. عملت نسخة احتياطية؟ نكمل؟')) return;
+  const log={id:V24_OWN.id,at:new Date().toISOString(),ch:[],added:[],open:{}}; const byId={}; treasury.forEach(t=>{ byId[t.id]=t; }); let nid=treasury.reduce((m,t)=>Math.max(m,t.id||0),0)+1;
+  all.forEach(c=>{ const t=byId[c.id]; if(!t) return; log.ch.push({id:t.id,cat:t.category,amount:t.amount,notes:t.notes||''});
+    if(c.split){ const rest=Object.assign({},t); delete rest.importKey; delete rest.fromImport; rest.id=nid++; rest.amount=c.split.draw; rest.voucherNo=(t.voucherNo||'')?(t.voucherNo+'-ب'):''; rest.notes=(t.notes||'')+' | باقي حركة اتقسمت (سحب فعلي)'; rest.splitOf=t.id; rest.reclassBatch=V24_OWN.id; treasury.push(rest); log.added.push(rest.id); t.amount=c.split.repay; t.notes=(t.notes||'')+' | جزء سداد سلفة من حركة اتقسمت'; }
+    t.category=c.to; t.reclassBatch=V24_OWN.id; });
+  DB.save('treasury',treasury);
+  if(openCh.length){ const ob=JSON.parse(JSON.stringify(v24Cfg('openBal',{client:{},supplier:{},owner:{}}))); ob.owner=ob.owner||{};
+    openCh.forEach(o=>{ const key=Object.keys(ob.owner).find(k=>v24Nz(k)===v24Nz(o.name)); log.open[o.name]={key:key||null,prev:key?ob.owner[key]:null}; ob.owner[key||o.name]=o.openChange.to; }); v24SetCfg('openBal',ob); }
+  const lg=(v24Cfg('ownLog',[])||[]).slice(); lg.push(log); v24SetCfg('ownLog',lg); alert('اتنفذ: '+all.length+' تغيير تصنيف'+(log.added.length?' ('+log.added.length+' حركة اتقسمت)':'')+'.'); v24RenderOwnRe();
+}
+function v24OwnUndo(){
+  const lg=(v24Cfg('ownLog',[])||[]).slice(); const i=lg.map(l=>!l.undone).lastIndexOf(true); if(i<0) return; const g=lg[i];
+  if(!confirm('هترجّع تصنيف الحركات وتشيل الحركات اللي اتقسمت ورصيد 2025 اللي اتضاف. متأكد؟')) return;
+  treasury=treasury.filter(t=>g.added.indexOf(t.id)<0); const byId={}; treasury.forEach(t=>{ byId[t.id]=t; });
+  g.ch.forEach(c=>{ const t=byId[c.id]; if(t){ t.category=c.cat; t.amount=c.amount; t.notes=c.notes; delete t.reclassBatch; } });
+  DB.save('treasury',treasury);
+  if(g.open&&Object.keys(g.open).length){ const ob=JSON.parse(JSON.stringify(v24Cfg('openBal',{client:{},supplier:{},owner:{}}))); ob.owner=ob.owner||{};
+    Object.entries(g.open).forEach(([name,o])=>{ const key=o.key||name; if(o.prev===null) delete ob.owner[key]; else ob.owner[key]=o.prev; }); v24SetCfg('openBal',ob); }
+  g.undone=true; v24SetCfg('ownLog',lg); v24RenderOwnRe();
+}
+
 // ================= v24 — تركيب الصفحات والتهيئة =================
 (function v24Boot(){
   v24InitLast();
@@ -11851,12 +12024,14 @@ function v24SsUndo(){
   v24AddPage('packaging','pk-sinv','🧾 فواتير البيع (أصناف)',pkRenderSInv,`<div class="p-content"><div class="v24-warn">فاتورة بيع باسم العميل وفيها أكتر من صنف: بتسجّل نفسها في حساب العميل (آجل أو نقدي أو دفعة جزئية) وبتصرف الأصناف من مخزن الكوفير تلقائيًا. التعديل أو الحذف من هنا بيصلّح الحساب والمخزن معًا.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><span id="pksi-filter"></span><select id="pksi-c" onchange="pkRenderSInv()" style="padding:6px 10px"><option value="">كل العملاء</option></select><button class="btn btn-primary" id="pksi-add" onclick="pkSINew()">➕ فاتورة بيع</button></div><div id="pksi-form"></div><div class="v24-kpis" id="pksi-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pksi-body"></div></div></div>`);
   v24AddPage('packaging','pk-open','📌 أرصدة افتتاحية',pkRenderOpen,`<div class="p-content"><div class="v24-warn">أرصدة أول المدة لكل العملاء والموردين في شاشة واحدة. رصيد العميل بيتسجل كحركة «رصيد سابق» في حسابه، ورصيد المورد بيتسجل كرصيد أول المدة بتاعه (وبيظهر في صفحة حسابات الموردين). التغيير بيتأكد منك قبل ما يتحفظ، وتقدر تضيف عميل أو مورد جديد برصيده.</div><div id="pko-body"></div></div>`);
   v24AddPage('packaging','pk-supstm','🏭 مطابقة كشف مورد',v24RenderSupStm,`<div class="p-content"><div id="ss-body"></div></div>`);
+  v24AddPage('packaging','pk-pl','📈 قائمة الأرباح والخسائر',pkRenderPL,`<div class="p-content"><div class="v24-warn" id="pkpl-note"></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px"><label style="font-size:12px">من <input type="month" id="pkpl-from" onchange="pkRenderPL()"></label><label style="font-size:12px">إلى <input type="month" id="pkpl-to" onchange="pkRenderPL()"></label><select id="pkpl-basis" onchange="pkRenderPL()" style="padding:6px 10px"><option value="accrual">أساس الاستحقاق</option><option value="cash">الأساس النقدي</option></select><button class="btn" onclick="pkPlPrint()">🖨 طباعة</button><button class="btn" onclick="pkPlCsv()">📄 تصدير CSV</button></div><div class="v24-kpis" id="pkpl-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pkpl-body"></div></div></div>`);
   v24AddPage('packaging','pk-pricing','🧮 تسعير الكوفير',pkRenderPricing,`<div class="p-content"><div class="v24-warn">السعر = (مكونات الكوفير من متوسط سعر الشراء في المخزن + الكرتونة + كيس التغليف + العمالة) × (1 + هامش الربح). أي تغيير في أسعار الشراء بيتحسب تلقائيًا.</div><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pkpc-add" onclick="pkNewPricing()">➕ تسعيرة جديدة</button></div><div id="pkpc-cfg" style="margin-bottom:10px"></div><div id="pkpc-form"></div><div id="pkpc-body"></div></div>`);
   v24AddPage('packaging','pk-quote','🧮 حاسبة السعر',pkRenderQuote,`<div class="p-content"><div class="v24-warn">اكتب مكونات الكوفير وحدد الكيس، وهيظهر لك السعر النهائي فورًا. السعر بيتحسب تلقائيًا من إعدادات الإدارة.</div><div id="pkq-form"></div><h3 style="margin:16px 0 8px">التسعيرات المحفوظة</h3><div id="pkq-list"></div></div>`);
   v24AddPage('packaging','pk-analysis','📊 تحليل الأداء',pkRenderAnalysis,`<div class="p-content"><div style="margin-bottom:10px" id="pk-an-filter"></div><div class="v24-kpis" id="pk-an-kpis"></div><div id="pk-an-advice" style="margin-bottom:10px"></div><div id="pk-an-body"></div><div class="v24-card"><b>إعدادات الماكينة</b> <span style="font-size:11px;color:#888">(للمدير)</span><div class="form-row"><div class="form-group"><label>اسم الماكينة</label><input id="pk-name"></div><div class="form-group"><label>السرعة المعيارية (عبوة/دقيقة)</label><input id="pk-speed" type="number" min="1"></div><div class="form-group" style="display:flex;align-items:flex-end"><button class="btn" onclick="pkSaveCfg()">حفظ</button></div></div></div></div>`);
   v24AddPage('finance','cheques','🧾 الشيكات',v24RenderCheques,`<div class="p-content"><div class="v24-kpis" id="chq-kpis"></div><div class="filter-bar" style="margin-bottom:10px;display:flex;gap:8px">${sel('chq-st','<option value="">كل الحالات</option>'+V24_CHEQUE_ST.map(x=>`<option>${x}</option>`).join(''),'v24RenderCheques')}${sel('chq-tp','<option value="">وارد وصادر</option><option value="in">وارد</option><option value="out">صادر</option>','v24RenderCheques')}</div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="chq-body"></div></div></div>`);
   v24AddPage('finance','custody','👛 العُهد',v24RenderCustody,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">الصرف للشخص بيتسجل من الخزينة بند «عهدة (صرف لشخص)». هنا بتسجّل مصروفاته بالإيصالات، والباقي نقدًا بيرجع بند «تسوية / رد عهدة».</p><div class="v24-kpis" id="cus-kpis"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="cus-body"></div></div></div>`);
   v24AddPage('finance','owners','👤 حسابات الملاك',v24RenderOwners,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">كل مالك: كام سحب وكام دخّل في الخزنة. المصدر بنود الخزينة «سحب مالك / أرباح» و«رأس مال / إيداع مالك» وغيرها من بنود الملاك، بحسب اسم المالك.</p><div style="margin-bottom:10px"><select id="own-year" onchange="v24RenderOwners()" style="padding:6px 10px"></select></div><div class="v24-kpis" id="own-kpis"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="own-body"></div></div></div>`);
+  v24AddPage('finance','own-reclass','🧮 تصنيف حركات الملاك',v24RenderOwnRe,`<div class="p-content"><div id="ownre-body"></div></div>`);
   v24AddPage('finance','openbal','📌 أرصدة افتتاحية 2025',v24RenderOpenBal,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">سجّل رصيد كل عميل ومورد ومالك منقول من سنة 2025. بيظهر في كشف الحساب باسم «رصيد افتتاحي منقول من 2025».</p><div id="ob-body"></div></div>`);
   v24AddPage('finance','reroute','🔀 تصحيح توجيه الحركات',v24RenderReroute,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">بينقل حركات عملاء التعبئة والتغليف (أحمد مصطفى، اسلام سليمان/سليمان بلاست، محمد صلاح/زاد، الشيف مصطفى) وبيع الكراتين من خزينة الحقن لأماكنها الصح، من غير ما تعيد أي شغل.</p><div id="rr-body"></div></div>`);
   v24AddPage('finance','fixcash','🧮 تطبيق تصحيحات الخزنة',v24RenderFix,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">تصحيحات مقارنة الخزنة بالشيتات (1/11): إضافة الناقص، حذف المكرر والزايد، وتوحيد المبالغ. بمعاينة قبل التنفيذ وزرار تراجع.</p><div id="fx-body"></div></div>`);
