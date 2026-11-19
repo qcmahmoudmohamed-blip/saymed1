@@ -11749,7 +11749,66 @@ const V24_SUPSTM={id:'sup-2026-11-15-alaa',title:'كشف حساب علاء كر�
   ['2026-10-30',45000,'تحويل 20000+10000+15000 (سند 4619)'],
   ['2026-11-07',40000,'تحويل (سند 4661)']
 ]}}};
-function v24SsList(){ return [V24_SUPSTM]; }
+const V24_SUPSTM2={id:'sup-2026-11-19-newlook',title:'كشف حساب نيولوك برهومة من دفتره — من 1/1/2026 لحد 16/11/2026 (رصيد أول المدة بتاع آخر 2025)',sup:{
+ 'نيولوك برهومة':{open:{amount:20445.5,date:'2026-01-01'},sheet:['2026-11-16',35965.5],checks:[['2026-03-30',7625.5],['2026-06-28',53175.5],['2026-09-30',64525.5],['2026-10-16',19525.5]],win:{buy:3,pay:4},
+ buy:[
+  ['2026-01-17',17000,'فاتورة نيولوك 22063'],
+  ['2026-01-28',18250,'فاتورة نيولوك 22152'],
+  ['2026-02-05',26480,'فاتورة نيولوك 22244'],
+  ['2026-03-08',28450,'فاتورة نيولوك 22546'],
+  ['2026-03-31',5000,'فاتورة نيولوك 22678'],
+  ['2026-04-07',9000,'فاتورة نيولوك 22721'],
+  ['2026-04-15',16000,'فاتورة نيولوك 22788'],
+  ['2026-05-09',29000,'فاتورة نيولوك 22954'],
+  ['2026-05-23',60300,'فاتورة نيولوك 23111'],
+  ['2026-05-25',8250,'فاتورة نيولوك 23156'],
+  ['2026-06-22',23000,'فاتورة نيولوك 23282'],
+  ['2026-06-28',10000,'فاتورة نيولوك 23358'],
+  ['2026-07-08',13300,'فاتورة نيولوك 23455'],
+  ['2026-07-13',20200,'فاتورة نيولوك 23491'],
+  ['2026-07-28',17100,'فاتورة نيولوك 23644'],
+  ['2026-07-30',20650,'فاتورة نيولوك 23696'],
+  ['2026-08-17',11400,'فاتورة نيولوك 23834'],
+  ['2026-08-22',15750,'فاتورة نيولوك 23897'],
+  ['2026-08-24',25800,'فاتورة نيولوك 23932'],
+  ['2026-08-27',9150,'فاتورة نيولوك 23914'],
+  ['2026-09-06',24800,'فاتورة نيولوك 24041'],
+  ['2026-09-12',33750,'فاتورة نيولوك 24091'],
+  ['2026-09-15',14250,'فاتورة نيولوك 24128'],
+  ['2026-09-30',19200,'فاتورة نيولوك 24211'],
+  ['2026-10-31',34190,'فاتورة نيولوك 24446'],
+  ['2026-11-11',2250,'فاتورة نيولوك 24568']],
+ pay:[
+  ['2026-01-04',15000,'إيداع'],
+  ['2026-01-27',15000,'إيداع'],
+  ['2026-02-10',10000,'إيداع'],
+  ['2026-02-15',10000,'إيداع'],
+  ['2026-03-01',10000,'إيداع'],
+  ['2026-03-04',10000,'إيداع'],
+  ['2026-03-16',13000,'إيداع'],
+  ['2026-03-30',20000,'إيداع'],
+  ['2026-04-10',15000,'إيداع'],
+  ['2026-05-05',20000,'إيداع'],
+  ['2026-05-21',10000,'إيداع'],
+  ['2026-05-26',20000,'إيداع'],
+  ['2026-06-16',25000,'إيداع'],
+  ['2026-06-18',10000,'إيداع'],
+  ['2026-06-25',15000,'إيداع'],
+  ['2026-07-01',15000,'إيداع'],
+  ['2026-07-13',25000,'إيداع'],
+  ['2026-07-21',20000,'إيداع'],
+  ['2026-08-04',15000,'إيداع'],
+  ['2026-08-09',20000,'إيداع'],
+  ['2026-08-29',20000,'إيداع'],
+  ['2026-08-30',10000,'ايداع فودافون كاش'],
+  ['2026-09-04',15000,'إيداع'],
+  ['2026-09-09',25000,'ايداع موبنيل كاش 23000 + ايداع 2000'],
+  ['2026-09-10',25000,'إيداع'],
+  ['2026-09-23',24000,'إيداع'],
+  ['2026-10-10',30000,'إيداع'],
+  ['2026-10-16',15000,'إيداع'],
+  ['2026-11-16',20000,'إيداع']]}}};
+function v24SsList(){ return [V24_SUPSTM,V24_SUPSTM2]; }
 function v24SsBal(s,upto,open,addBuys,addPays){
   const from=open.date; const ok=d=>d>=from&&(!upto||d<=upto); let run=Number(open.amount)||0;
   (V24D.pkPurch||[]).filter(p=>p.supplier===s&&ok(p.date)).forEach(p=>run+=Number(p.total)||0);
@@ -11847,14 +11906,22 @@ function pkPlCompute(from,to,basis){
   // التكاليف
   const so=v24Cfg('pkSupOpen',{})||{}, entries=v24Cfg('pkSupEntries',[])||[], costs=V24D.pkLedger.filter(l=>l.kind==='cost');
   const cats=new Set(); costs.forEach(l=>cats.add(l.category||'أخرى')); Object.keys(so).forEach(s=>cats.add(s));
-  const matL=[], oneach={sal:Z(),rent:Z(),elec:Z(),mnt:Z(),frt:Z()}, othL={};
+  const matL=[], audit=[], oneach={sal:Z(),rent:Z(),elec:Z(),mnt:Z(),frt:Z()}, othL={};
   [...cats].forEach(c=>{
     const g=pkPlGroup(c);
     if(g==='mat'||so[c]){
-      const v=Z(); let lbl=c;
-      if(basis==='accrual'&&so[c]){ (V24D.pkPurch||[]).filter(p=>p.supplier===c).forEach(p=>put(v,p.date,pkN(p.total))); entries.filter(e=>e.supplier===c).forEach(e=>put(v,e.date,e.kind==='purchase'?pkN(e.amount):-pkN(e.amount))); lbl=c+' — مشتريات (استحقاق)'; }
-      else { costs.filter(l=>(l.category||'أخرى')===c).forEach(l=>put(v,l.date,pkN(l.amount))); if(basis==='accrual') lbl=c+' — مدفوع'; }
-      if(v.some(x=>x)) matL.push({l:lbl,v});
+      const pv=Z(), pd=Z(); let lbl=c;
+      (V24D.pkPurch||[]).filter(p=>p.supplier===c).forEach(p=>put(pv,p.date,pkN(p.total))); entries.filter(e=>e.supplier===c).forEach(e=>put(pv,e.date,e.kind==='purchase'?pkN(e.amount):-pkN(e.amount)));
+      costs.filter(l=>(l.category||'أخرى')===c).forEach(l=>put(pd,l.date,pkN(l.amount)));
+      // بالاستحقاق: المورد لازم يكون ليه رصيد أول مدة ومشتريات مسجلة — غير كده بيتحسب بالمدفوع عشان ميختفيش من القائمة
+      const hasPur=(V24D.pkPurch||[]).some(p=>p.supplier===c)||entries.some(e=>e.supplier===c&&e.kind==='purchase');
+      // لو المدفوع الكلي أكبر من (رصيد أول المدة + المشتريات المسجلة) يبقى فواتير المورد ناقصة → بنرجع للمدفوع عشان التكلفة متقلش
+      const od=so[c]?(so[c].date||''):'', allPur=(V24D.pkPurch||[]).filter(p=>p.supplier===c&&p.date>=od).reduce((t,p)=>t+pkN(p.total),0)+entries.filter(e=>e.supplier===c&&e.date>=od).reduce((t,e)=>t+(e.kind==='purchase'?pkN(e.amount):-pkN(e.amount)),0), allPaid=costs.filter(l=>(l.category||'أخرى')===c&&l.date>=od).reduce((t,l)=>t+pkN(l.amount),0);
+      const incomplete=!!so[c]&&hasPur&&(pkN(so[c].amount)+allPur)<allPaid-1;
+      const usePur=basis==='accrual'&&!!so[c]&&hasPur&&!incomplete;
+      if(basis==='accrual') lbl=usePur?c+' — مشتريات (استحقاق)':c+(incomplete?' — مدفوع (المشتريات المسجلة ناقصة)':so[c]?' — مدفوع (مفيش مشتريات مسجلة)':' — مدفوع');
+      const v=usePur?pv:pd; if(v.some(x=>x)) matL.push({l:lbl,v,paid:basis==='accrual'&&!usePur});
+      if(pv.some(x=>x)||pd.some(x=>x)) audit.push({s:c,usePur,incomplete,hasOpen:!!so[c],purch:sum(pv),paid:sum(pd)});
     } else if(oneach[g]) costs.filter(l=>(l.category||'أخرى')===c).forEach(l=>put(oneach[g],l.date,pkN(l.amount)));
     else { const v=Z(); costs.filter(l=>(l.category||'أخرى')===c).forEach(l=>put(v,l.date,pkN(l.amount))); if(v.some(x=>x)) othL[c]=v; }
   });
@@ -11864,18 +11931,18 @@ function pkPlCompute(from,to,basis){
   const netRev=plus(...rev.map(x=>x.v)), purch=matL.length?plus(...matL.map(x=>x.v)):Z();
   const cogs=ms.map((_,i)=>open[i]+purch[i]-close[i]), gross=ms.map((_,i)=>netRev[i]-cogs[i]);
   const opexTot=opx.length?plus(...opx.map(x=>x.v)):Z(), net=ms.map((_,i)=>gross[i]-opexTot[i]);
-  return {from,to,basis,ms,rev,matL,opx,open,close,netRev,purch,cogs,gross,opexTot,net,sum};
+  return {from,to,basis,ms,rev,matL,audit,opx,open,close,netRev,purch,cogs,gross,opexTot,net,sum};
 }
 function pkPlModel(R){
   const n=R.ms.length, sum=R.sum, M=[]; const ratio=(a,b)=>a.map((x,i)=>b[i]?x/b[i]:NaN);
   const L=(label,v,o)=>M.push(Object.assign({t:'l',label,v,tot:sum(v)},o||{}));
   M.push({t:'h',label:'الإيرادات'}); R.rev.forEach(x=>L(x.l,x.v));
   M.push({t:'s',label:'صافي الإيرادات',v:R.netRev,tot:sum(R.netRev)});
-  M.push({t:'h',label:'تكلفة المبيعات'});
+  M.push({t:'h',label:'الموردين (مشتريات الخامات والمستلزمات)'});
   M.push({t:'op',label:'مخزون أول المدة',v:R.open,tot:R.open[0]||0});
   R.matL.forEach(x=>L(x.l,x.v));
   M.push({t:'in',label:'(−) مخزون آخر المدة',v:R.close,tot:R.close[n-1]||0});
-  M.push({t:'s',label:'تكلفة المبيعات',v:R.cogs,tot:sum(R.cogs)});
+  M.push({t:'s',label:'إجمالي الموردين (تكلفة المبيعات)',v:R.cogs,tot:sum(R.cogs)});
   M.push({t:'t',label:'مجمل الربح',v:R.gross,tot:sum(R.gross)});
   M.push({t:'p',label:'هامش مجمل الربح %',v:ratio(R.gross,R.netRev),tot:sum(R.netRev)?sum(R.gross)/sum(R.netRev):NaN});
   M.push({t:'h',label:'مصروفات التشغيل'}); R.opx.forEach(x=>L(x.l,x.v));
@@ -11911,9 +11978,11 @@ function pkRenderPL(){
   const nr=s(R.netRev), gr=s(R.gross), nt=s(R.net);
   document.getElementById('pkpl-kpis').innerHTML=kp('صافي الإيرادات',pkF(nr))+kp('مجمل الربح',pkF(gr),gr<0?'#c62828':'#2e7d32')+kp('صافي الربح / (الخسارة)',pkF(nt),nt<0?'#c62828':'#2e7d32')+kp('هامش صافي الربح',nr?pkPct(nt/nr):'—');
   body.innerHTML=pkPlTable(R,true);
-  const accr=R.basis==='accrual', paid=R.matL.filter(x=>/ — مدفوع$/.test(x.l)).map(x=>x.l.replace(/ — مدفوع$/,'')), noStock=!R.close.some(x=>x)&&!R.open.some(x=>x);
+  const accr=R.basis==='accrual', paid=R.matL.filter(x=>x.paid).map(x=>x.l.replace(/ — مدفوع.*$/,'')), noStock=!R.close.some(x=>x)&&!R.open.some(x=>x);
+  const au=document.getElementById('pkpl-audit');
+  if(au) au.innerHTML=R.audit.length?`<div class="card" style="margin-top:12px"><div class="card-body" style="padding:10px;overflow:auto"><b>تدقيق الموردين — اللي داخل في القائمة وإزاي</b><table class="v24-table" style="margin-top:6px"><thead><tr><th>المورد</th><th>المحسوب في القائمة</th><th>مشتريات مسجلة</th><th>مدفوع من الخزنة</th><th>الفرق (مدفوع − مشتريات)</th></tr></thead><tbody>${R.audit.map(a=>{ const d=a.paid-a.purch, warn=(a.usePur||a.incomplete)&&d>1000; return `<tr><td>${v24Esc(a.s)}</td><td style="font-size:11px">${R.basis==='cash'?'المدفوع':a.usePur?'المشتريات (استحقاق)':a.incomplete?'المدفوع (المشتريات ناقصة)':'المدفوع'}</td><td>${pkF(a.purch)}</td><td>${pkF(a.paid)}</td><td style="${warn?'color:#c62828;font-weight:700':''}">${pkF(d)}${warn?' ⚠':''}</td></tr>`; }).join('')}</tbody></table><div style="font-size:11px;color:#777;margin-top:6px">⚠ = المدفوع أكبر من المشتريات المسجلة: يا فواتير المورد ناقصة يا الفرق سداد رصيد أول المدة. لو المدفوع أكبر من (رصيد أول المدة + المشتريات) القائمة بتستخدم المدفوع عشان التكلفة متقلش.</div></div></div>`:'';
   document.getElementById('pkpl-note').innerHTML=(accr?'<b>أساس الاستحقاق:</b> الإيراد = فواتير البيع بتاريخها (التحصيلات والأرصدة الافتتاحية مش إيراد). تكلفة المورد اللي ليه رصيد أول مدة = مشتريات المورد، وغيره = المدفوع من الخزنة.':'<b>الأساس النقدي:</b> الإيراد = التحصيلات الفعلية، والتكلفة = كل المدفوع من الخزنة.')
-   +(accr&&paid.length?'<br>• موردين محسوبين بالمدفوع (مفيش رصيد أول مدة ليهم): '+paid.map(v24Esc).join('، ')+' — سجّل رصيد أول المدة وفواتيرهم في «حسابات الموردين» لتتحسب بالاستحقاق.':'')
+   +(accr&&paid.length?'<br>• موردين محسوبين بالمدفوع (مفيش رصيد أول مدة أو مشتريات مسجلة ليهم): '+paid.map(v24Esc).join('، ')+' — سجّل رصيد أول المدة وفواتيرهم في «حسابات الموردين» لتتحسب بالاستحقاق.':'')
    +(noStock?'<br>• <b>مخزون آخر المدة مش مسجل:</b> التكلفة هنا = كل مشتريات الفترة، مش المستهلك فعلًا. اكتب قيمة المخزون آخر كل شهر في الصف المخصوص عشان تتظبط تكلفة المبيعات.':'')
    +'<br>• الأرقام بتعتمد على اكتمال تسجيل المبيعات والمصروفات في البرنامج.';
 }
@@ -11934,40 +12003,49 @@ function pkPlCsv(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='قائمة_أرباح_وخسائر_التعبئة_'+R.from+'_'+R.to+'.csv'; document.body.appendChild(a); a.click(); a.remove();
 }
 
-// ================= إعادة تصنيف حركات الملاك: سلف / سداد سلف / سحب فعلي =================
-// القاعدة: كل مالك عنده رصيد سلف (رصيد 2025 + إيداعاته المكتوب عليها سلفة). أول سحوباته (بالترتيب الزمني) بتسدد السلف دي «سداد سلفة»،
-// وأي سحب زيادة عن كده «سحب فعلي» (حقوق ملكية). أحمد منصور ومخصصات بيطلعوا بره حسابات الملاك (التصنيف بيتغير لبند مش بتاع ملاك والفلوس بتفضل في الخزينة).
-const V24_OWN={id:'own-2026-11-15',out:{'احمد منصور':'تسوية حصة شريك سابق','مخصصات':'مصاريف أخرى'},owners:['محمود يوسف','احمد يوسف','احمد ابو عبده','احمد عادل'],open:{'احمد عادل':28000}};
-const V24_OWN_CAP='رأس مال / إيداع مالك', V24_OWN_LOAN='سلفة / تمويل من مالك', V24_OWN_REPAY='سداد سلفة / تمويل لمالك', V24_OWN_DRAW='سحب مالك / أرباح';
-(function(){ const a=TREASURY_CATEGORIES.out; if(a.indexOf('تسوية حصة شريك سابق')<0) a.push('تسوية حصة شريك سابق'); })();
+// ================= إعادة تصنيف حركات الملاك: سلف / سداد سلف / مصاريف إدارية / سحب فعلي =================
+// القاعدة (بالترتيب الزمني لسحوبات كل مالك): أول سحوباته بتسدد السلف (رصيد 2025 + إيداعاته المكتوب عليها سلفة)، والباقي:
+//  - لو المالك ليه راتب/مكافأة إدارية شهرية (محمود 3,000 كل شهر · أحمد عادل 3,000 من يونيو · أبو عبده 5,000 يناير و7,000 من فبراير) الباقي = «مصاريف إدارية»
+//    (والمجدول بيتخصم من السحوبات حتى لو رصيد السلف يكفي كلها)،
+//  - غير كده (أحمد يوسف) الباقي = «سحب فعلي».
+// أحمد منصور ومخصصات بيطلعوا بره حسابات الملاك (التصنيف بيتغير لبند مش بتاع ملاك والفلوس بتفضل في الخزينة).
+const V24_OWN={id:'own-2026-11-15',out:{'احمد منصور':'تسوية حصة شريك سابق','مخصصات':'مصاريف أخرى'},owners:['محمود يوسف','احمد يوسف','احمد ابو عبده','احمد عادل'],open:{'احمد عادل':28000,'احمد ابو عبده':28000},
+  admin:{'محمود يوسف':{from:'2026-01',rate:3000},'احمد عادل':{from:'2026-06',rate:3000},'احمد ابو عبده':{sched:[['2026-01',5000],['2026-02',7000]]}}};
+const V24_OWN_CAP='رأس مال / إيداع مالك', V24_OWN_LOAN='سلفة / تمويل من مالك', V24_OWN_REPAY='سداد سلفة / تمويل لمالك', V24_OWN_DRAW='سحب مالك / أرباح', V24_OWN_ADM='مصاريف إدارية';
+(function(){ const a=TREASURY_CATEGORIES.out; ['تسوية حصة شريك سابق','مصاريف إدارية'].forEach(c=>{ if(a.indexOf(c)<0) a.push(c); }); })();
+function v24OwnAdminTarget(name){
+  const nz=v24Nz; const k=Object.keys(V24_OWN.admin).find(x=>nz(x)===nz(name)); if(!k) return 0; const cfg=V24_OWN.admin[k]; const last=today().slice(0,7); let y=2026, m=1, tot=0;
+  while((y+'-'+String(m).padStart(2,'0'))<=last&&y<2030){ const mk=y+'-'+String(m).padStart(2,'0'); let r=0;
+    if(cfg.sched){ cfg.sched.forEach(([from,rate])=>{ if(mk>=from) r=rate; }); } else if(mk>=cfg.from) r=cfg.rate;
+    tot+=r; m++; if(m>12){ m=1; y++; } }
+  return tot;
+}
 function v24OwnPlan(){
-  const T=treasury.slice(), nz=v24Nz, ob=(v24Cfg('openBal',{})||{}).owner||{};
+  const T=treasury.slice(), nz=v24Nz;
   const out=[]; Object.keys(V24_OWN.out).forEach(party=>{ T.filter(t=>nz(t.party||'')===nz(party)&&V24_OWNER_CATS.indexOf(t.category)>=0).forEach(t=>out.push({id:t.id,date:t.date,party:t.party||party,amount:+t.amount||0,from:t.category,to:V24_OWN.out[party],type:t.type})); });
   const owners=V24_OWN.owners.map(name=>{
     const rows=T.filter(t=>nz(t.party||'')===nz(name)), cur=v24OB('owner',name), target=V24_OWN.open[name], open=target!==undefined?target:cur;
     const dep=rows.filter(t=>t.type==='in'&&(t.category===V24_OWN_CAP||t.category===V24_OWN_LOAN));
-    const wd=rows.filter(t=>t.type==='out'&&(t.category===V24_OWN_DRAW||t.category===V24_OWN_REPAY)).sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.id-b.id);
-    const adv=dep.reduce((s,t)=>s+(+t.amount||0),0); let remaining=open+adv, repaid=0, drawn=0; const changes=[];
-    dep.filter(t=>t.category===V24_OWN_CAP).forEach(t=>changes.push({id:t.id,date:t.date,amount:+t.amount||0,from:t.category,to:V24_OWN_LOAN,type:'in'}));
-    wd.forEach(t=>{ const a=+t.amount||0;
-      if(t.category===V24_OWN_REPAY){ remaining-=a; repaid+=a; return; }
-      const take=/راتب|مرتب/.test(t.desc||'')?0:Math.min(a,Math.max(remaining,0));
-      if(take>=a-0.005){ changes.push({id:t.id,date:t.date,amount:a,from:t.category,to:V24_OWN_REPAY,type:'out'}); remaining-=a; repaid+=a; }
-      else if(take>0.005){ changes.push({id:t.id,date:t.date,amount:a,from:t.category,to:V24_OWN_REPAY,type:'out',split:{repay:take,draw:a-take}}); remaining-=take; repaid+=take; drawn+=a-take; }
-      else drawn+=a; });
-    return {name,cur,open,openChange:(target!==undefined&&Math.abs(cur-target)>0.5)?{from:cur,to:target}:null,adv,repaid,drawn,loanLeft:Math.round(remaining*100)/100,changes};
+    const wd=rows.filter(t=>t.type==='out'&&[V24_OWN_DRAW,V24_OWN_REPAY,V24_OWN_ADM].indexOf(t.category)>=0).sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.id-b.id);
+    const adv=dep.reduce((s,t)=>s+(+t.amount||0),0), C=open+adv, W=wd.reduce((s,t)=>s+(+t.amount||0),0), A=v24OwnAdminTarget(name), isAdm=A>0;
+    const lateTot=isAdm?Math.min(W,Math.max(W-C,A)):Math.max(W-C,0), repayTot=W-lateTot, LATE=isAdm?V24_OWN_ADM:V24_OWN_DRAW;
+    const changes=[]; dep.filter(t=>t.category===V24_OWN_CAP).forEach(t=>changes.push({id:t.id,date:t.date,amount:+t.amount||0,from:t.category,to:V24_OWN_LOAN,type:'in'}));
+    let cum=0; wd.forEach(t=>{ const a=+t.amount||0, r=Math.max(0,Math.min(a,repayTot-cum)); cum+=a;
+      if(r>=a-0.005){ if(t.category!==V24_OWN_REPAY) changes.push({id:t.id,date:t.date,amount:a,from:t.category,to:V24_OWN_REPAY,type:'out'}); }
+      else if(r<=0.005){ if(t.category!==LATE) changes.push({id:t.id,date:t.date,amount:a,from:t.category,to:LATE,type:'out'}); }
+      else changes.push({id:t.id,date:t.date,amount:a,from:t.category,to:V24_OWN_REPAY,type:'out',split:{repay:r,rest:a-r,restCat:LATE}}); });
+    return {name,cur,open,openChange:(target!==undefined&&Math.abs(cur-target)>0.5)?{from:cur,to:target}:null,adv,repaid:repayTot,admin:isAdm?lateTot:0,drawn:isAdm?0:lateTot,sched:isAdm?A:0,loanLeft:Math.round((C-repayTot)*100)/100,changes};
   });
   return {out,owners};
 }
 function v24RenderOwnRe(){
   const el=document.getElementById('ownre-body'); if(!el) return; const p=v24OwnPlan(); const n=p.out.length+p.owners.reduce((s,o)=>s+o.changes.length+(o.openChange?1:0),0);
-  const lg=(v24Cfg('ownLog',[])||[]).filter(l=>!l.undone);
-  const sum=a=>a.reduce((t,x)=>t+x,0);
-  el.innerHTML=`<div class="v24-warn">كل مالك: رصيد 2025 + إيداعاته (سلف). أول سحوباته بالترتيب الزمني بتسدد السلف («سداد سلفة»)، وأي سحب زيادة = «سحب فعلي». حركة واحدة بس ممكن تتقسم لكل مالك (جزء سداد وجزء سحب فعلي). الفلوس في الخزينة مبتتأثرش — التصنيف بس. خد نسخة احتياطية الأول، وفي زرار تراجع.</div>
+  const lg=(v24Cfg('ownLog',[])||[]).filter(l=>!l.undone), sum=a=>a.reduce((t,x)=>t+x,0);
+  el.innerHTML=`<div class="v24-warn">كل مالك: رصيد 2025 + إيداعاته (سلف). سحوباته بالترتيب الزمني أولًا بتسدد السلف («سداد سلفة»)، والباقي «مصاريف إدارية» لمن ليه مبلغ إداري شهري (محمود وأحمد عادل وأبو عبده) أو «سحب فعلي» لباقي الملاك. حركة واحدة بس ممكن تتقسم لكل مالك. الفلوس في الخزينة مبتتأثرش — التصنيف بس. خد نسخة احتياطية الأول، وفي زرار تراجع.</div>
   <div class="card" style="margin-bottom:12px"><div class="card-body" style="padding:10px;overflow:auto"><b>الملاك بعد إعادة التصنيف</b>
-  <table class="v24-table" style="margin-top:6px"><thead><tr><th>المالك</th><th>رصيد 2025 (له)</th><th>سلف 2026</th><th>سداد سلف</th><th>سحب فعلي</th><th>المتبقي له كسلفة</th><th>تغييرات</th></tr></thead><tbody>${p.owners.map(o=>`<tr><td>${v24Esc(o.name)}</td><td>${fmt(o.open)}${o.openChange?' <span style="font-size:10px;color:#b26a00">(هيتعدل من '+fmt(o.openChange.from)+')</span>':''}</td><td>${fmt(o.adv)}</td><td>${fmt(o.repaid)}</td><td>${fmt(o.drawn)}</td><td><b>${fmt(o.loanLeft)}</b></td><td>${o.changes.length+(o.openChange?1:0)}</td></tr>`).join('')}</tbody><tfoot><tr><th>الإجمالي</th><th>${fmt(sum(p.owners.map(o=>o.open)))}</th><th>${fmt(sum(p.owners.map(o=>o.adv)))}</th><th>${fmt(sum(p.owners.map(o=>o.repaid)))}</th><th>${fmt(sum(p.owners.map(o=>o.drawn)))}</th><th>${fmt(sum(p.owners.map(o=>o.loanLeft)))}</th><th></th></tr></tfoot></table></div></div>
+  <table class="v24-table" style="margin-top:6px"><thead><tr><th>المالك</th><th>رصيد 2025 (له)</th><th>سلف 2026</th><th>سداد سلف</th><th>مصاريف إدارية</th><th>سحب فعلي</th><th>المتبقي له كسلفة</th><th>تغييرات</th></tr></thead><tbody>${p.owners.map(o=>`<tr><td>${v24Esc(o.name)}</td><td>${fmt(o.open)}${o.openChange?' <span style="font-size:10px;color:#b26a00">(هيتسجل)</span>':''}</td><td>${fmt(o.adv)}</td><td>${fmt(o.repaid)}</td><td>${fmt(o.admin)}${o.sched?' <span style="font-size:10px;color:#777">(المجدول '+fmt(o.sched)+')</span>':''}</td><td>${fmt(o.drawn)}</td><td><b>${fmt(o.loanLeft)}</b></td><td>${o.changes.length+(o.openChange?1:0)}</td></tr>`).join('')}</tbody><tfoot><tr><th>الإجمالي</th><th>${fmt(sum(p.owners.map(o=>o.open)))}</th><th>${fmt(sum(p.owners.map(o=>o.adv)))}</th><th>${fmt(sum(p.owners.map(o=>o.repaid)))}</th><th>${fmt(sum(p.owners.map(o=>o.admin)))}</th><th>${fmt(sum(p.owners.map(o=>o.drawn)))}</th><th>${fmt(sum(p.owners.map(o=>o.loanLeft)))}</th><th></th></tr></tfoot></table></div></div>
   <div class="card" style="margin-bottom:12px"><div class="card-body" style="padding:10px;overflow:auto"><b>بره حسابات الملاك</b>${p.out.length?`<table class="v24-table" style="margin-top:6px"><thead><tr><th>التاريخ</th><th>الاسم</th><th>المبلغ</th><th>التصنيف الحالي</th><th>التصنيف الجديد</th></tr></thead><tbody>${p.out.map(x=>`<tr><td>${x.date}</td><td>${v24Esc(x.party)}</td><td>${fmt(x.amount)}</td><td style="font-size:11px">${v24Esc(x.from)}</td><td style="font-size:11px"><b>${v24Esc(x.to)}</b></td></tr>`).join('')}</tbody></table>`:'<div style="font-size:12px;color:#888;margin-top:6px">مفيش حاجة</div>'}</div></div>
-  <details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:13px">تفاصيل الحركات اللي هتتغير (${p.owners.reduce((s,o)=>s+o.changes.length,0)})</summary><div style="overflow:auto"><table class="v24-table" style="margin-top:6px"><thead><tr><th>التاريخ</th><th>المالك</th><th>المبلغ</th><th>من</th><th>إلى</th></tr></thead><tbody>${p.owners.flatMap(o=>o.changes.map(c=>`<tr><td>${c.date}</td><td>${v24Esc(o.name)}</td><td>${fmt(c.amount)}${c.split?' <span style="font-size:10px;color:#b26a00">(بتتقسم: '+fmt(c.split.repay)+' سداد + '+fmt(c.split.draw)+' سحب فعلي)</span>':''}</td><td style="font-size:11px">${v24Esc(c.from)}</td><td style="font-size:11px">${v24Esc(c.to)}</td></tr>`)).join('')||'<tr><td colspan="5" style="color:#888">لا تغييرات</td></tr>'}</tbody></table></div></details>
+  <details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:13px">تفاصيل الحركات اللي هتتغير (${p.owners.reduce((s,o)=>s+o.changes.length,0)})</summary><div style="overflow:auto"><table class="v24-table" style="margin-top:6px"><thead><tr><th>التاريخ</th><th>المالك</th><th>المبلغ</th><th>من</th><th>إلى</th></tr></thead><tbody>${p.owners.flatMap(o=>o.changes.map(c=>`<tr><td>${c.date}</td><td>${v24Esc(o.name)}</td><td>${fmt(c.amount)}${c.split?' <span style="font-size:10px;color:#b26a00">(بتتقسم: '+fmt(c.split.repay)+' سداد + '+fmt(c.split.rest)+' '+v24Esc(c.split.restCat)+')</span>':''}</td><td style="font-size:11px">${v24Esc(c.from)}</td><td style="font-size:11px">${v24Esc(c.to)}</td></tr>`)).join('')||'<tr><td colspan="5" style="color:#888">لا تغييرات</td></tr>'}</tbody></table></div></details>
   <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="v24OwnApply()" ${n?'':'disabled'}>✅ تنفيذ (${n} تغيير)</button><button class="btn" onclick="exportData()">💾 نسخة احتياطية كاملة</button>${lg.length?'<button class="btn" style="color:var(--c-danger)" onclick="v24OwnUndo()">↩️ تراجع عن آخر تنفيذ</button>':''}</div>`;
 }
 function v24OwnApply(){
@@ -11977,7 +12055,7 @@ function v24OwnApply(){
   if(!confirm('هيتغير تصنيف '+all.length+' حركة'+(openCh.length?' وهيتسجل رصيد افتتاحي 2025 لـ '+openCh.map(o=>o.name+' ('+fmt(o.openChange.to)+')').join('، '):'')+'. الفلوس في الخزينة مبتتأثرش. عملت نسخة احتياطية؟ نكمل؟')) return;
   const log={id:V24_OWN.id,at:new Date().toISOString(),ch:[],added:[],open:{}}; const byId={}; treasury.forEach(t=>{ byId[t.id]=t; }); let nid=treasury.reduce((m,t)=>Math.max(m,t.id||0),0)+1;
   all.forEach(c=>{ const t=byId[c.id]; if(!t) return; log.ch.push({id:t.id,cat:t.category,amount:t.amount,notes:t.notes||''});
-    if(c.split){ const rest=Object.assign({},t); delete rest.importKey; delete rest.fromImport; rest.id=nid++; rest.amount=c.split.draw; rest.voucherNo=(t.voucherNo||'')?(t.voucherNo+'-ب'):''; rest.notes=(t.notes||'')+' | باقي حركة اتقسمت (سحب فعلي)'; rest.splitOf=t.id; rest.reclassBatch=V24_OWN.id; treasury.push(rest); log.added.push(rest.id); t.amount=c.split.repay; t.notes=(t.notes||'')+' | جزء سداد سلفة من حركة اتقسمت'; }
+    if(c.split){ const rest=Object.assign({},t); delete rest.importKey; delete rest.fromImport; rest.id=nid++; rest.amount=c.split.rest; rest.category=c.split.restCat; rest.voucherNo=(t.voucherNo||'')?(t.voucherNo+'-ب'):''; rest.notes=(t.notes||'')+' | باقي حركة اتقسمت ('+c.split.restCat+')'; rest.splitOf=t.id; rest.reclassBatch=V24_OWN.id; treasury.push(rest); log.added.push(rest.id); t.amount=c.split.repay; t.notes=(t.notes||'')+' | جزء سداد سلفة من حركة اتقسمت'; }
     t.category=c.to; t.reclassBatch=V24_OWN.id; });
   DB.save('treasury',treasury);
   if(openCh.length){ const ob=JSON.parse(JSON.stringify(v24Cfg('openBal',{client:{},supplier:{},owner:{}}))); ob.owner=ob.owner||{};
@@ -12024,7 +12102,7 @@ function v24OwnUndo(){
   v24AddPage('packaging','pk-sinv','🧾 فواتير البيع (أصناف)',pkRenderSInv,`<div class="p-content"><div class="v24-warn">فاتورة بيع باسم العميل وفيها أكتر من صنف: بتسجّل نفسها في حساب العميل (آجل أو نقدي أو دفعة جزئية) وبتصرف الأصناف من مخزن الكوفير تلقائيًا. التعديل أو الحذف من هنا بيصلّح الحساب والمخزن معًا.</div><div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap"><span id="pksi-filter"></span><select id="pksi-c" onchange="pkRenderSInv()" style="padding:6px 10px"><option value="">كل العملاء</option></select><button class="btn btn-primary" id="pksi-add" onclick="pkSINew()">➕ فاتورة بيع</button></div><div id="pksi-form"></div><div class="v24-kpis" id="pksi-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pksi-body"></div></div></div>`);
   v24AddPage('packaging','pk-open','📌 أرصدة افتتاحية',pkRenderOpen,`<div class="p-content"><div class="v24-warn">أرصدة أول المدة لكل العملاء والموردين في شاشة واحدة. رصيد العميل بيتسجل كحركة «رصيد سابق» في حسابه، ورصيد المورد بيتسجل كرصيد أول المدة بتاعه (وبيظهر في صفحة حسابات الموردين). التغيير بيتأكد منك قبل ما يتحفظ، وتقدر تضيف عميل أو مورد جديد برصيده.</div><div id="pko-body"></div></div>`);
   v24AddPage('packaging','pk-supstm','🏭 مطابقة كشف مورد',v24RenderSupStm,`<div class="p-content"><div id="ss-body"></div></div>`);
-  v24AddPage('packaging','pk-pl','📈 قائمة الأرباح والخسائر',pkRenderPL,`<div class="p-content"><div class="v24-warn" id="pkpl-note"></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px"><label style="font-size:12px">من <input type="month" id="pkpl-from" onchange="pkRenderPL()"></label><label style="font-size:12px">إلى <input type="month" id="pkpl-to" onchange="pkRenderPL()"></label><select id="pkpl-basis" onchange="pkRenderPL()" style="padding:6px 10px"><option value="accrual">أساس الاستحقاق</option><option value="cash">الأساس النقدي</option></select><button class="btn" onclick="pkPlPrint()">🖨 طباعة</button><button class="btn" onclick="pkPlCsv()">📄 تصدير CSV</button></div><div class="v24-kpis" id="pkpl-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pkpl-body"></div></div></div>`);
+  v24AddPage('packaging','pk-pl','📈 قائمة الأرباح والخسائر',pkRenderPL,`<div class="p-content"><div class="v24-warn" id="pkpl-note"></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px"><label style="font-size:12px">من <input type="month" id="pkpl-from" onchange="pkRenderPL()"></label><label style="font-size:12px">إلى <input type="month" id="pkpl-to" onchange="pkRenderPL()"></label><select id="pkpl-basis" onchange="pkRenderPL()" style="padding:6px 10px"><option value="accrual">أساس الاستحقاق</option><option value="cash">الأساس النقدي</option></select><button class="btn" onclick="pkPlPrint()">🖨 طباعة</button><button class="btn" onclick="pkPlCsv()">📄 تصدير CSV</button></div><div class="v24-kpis" id="pkpl-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="pkpl-body"></div></div><div id="pkpl-audit"></div></div>`);
   v24AddPage('packaging','pk-pricing','🧮 تسعير الكوفير',pkRenderPricing,`<div class="p-content"><div class="v24-warn">السعر = (مكونات الكوفير من متوسط سعر الشراء في المخزن + الكرتونة + كيس التغليف + العمالة) × (1 + هامش الربح). أي تغيير في أسعار الشراء بيتحسب تلقائيًا.</div><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-primary" id="pkpc-add" onclick="pkNewPricing()">➕ تسعيرة جديدة</button></div><div id="pkpc-cfg" style="margin-bottom:10px"></div><div id="pkpc-form"></div><div id="pkpc-body"></div></div>`);
   v24AddPage('packaging','pk-quote','🧮 حاسبة السعر',pkRenderQuote,`<div class="p-content"><div class="v24-warn">اكتب مكونات الكوفير وحدد الكيس، وهيظهر لك السعر النهائي فورًا. السعر بيتحسب تلقائيًا من إعدادات الإدارة.</div><div id="pkq-form"></div><h3 style="margin:16px 0 8px">التسعيرات المحفوظة</h3><div id="pkq-list"></div></div>`);
   v24AddPage('packaging','pk-analysis','📊 تحليل الأداء',pkRenderAnalysis,`<div class="p-content"><div style="margin-bottom:10px" id="pk-an-filter"></div><div class="v24-kpis" id="pk-an-kpis"></div><div id="pk-an-advice" style="margin-bottom:10px"></div><div id="pk-an-body"></div><div class="v24-card"><b>إعدادات الماكينة</b> <span style="font-size:11px;color:#888">(للمدير)</span><div class="form-row"><div class="form-group"><label>اسم الماكينة</label><input id="pk-name"></div><div class="form-group"><label>السرعة المعيارية (عبوة/دقيقة)</label><input id="pk-speed" type="number" min="1"></div><div class="form-group" style="display:flex;align-items:flex-end"><button class="btn" onclick="pkSaveCfg()">حفظ</button></div></div></div></div>`);
