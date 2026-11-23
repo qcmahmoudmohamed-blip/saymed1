@@ -4541,7 +4541,7 @@ function renderMonthlyCostReport(){
   const grandMaint=rows.reduce((s,r)=>s+r.maintActual,0);
 
   // ===== تكلفة الوحدة حسب المنتج =====
-  // تكلفة الوحدة = تكلفة الخامة + نصيب التكاليف العامة/وحدة + تكلفة الكهرباء/وحدة
+  // تكلفة الوحدة = تكلفة الخامة + نصيب التكاليف العامة/وحدة + تكلفة الكهرباء/وحدة + إهلاك الماكينة والاسطمبة (بالحقنة)/وحدة
   const elecAnnual=rows.reduce((s,r)=>s+r.elec,0);
   const maintAnnual=grandMaint;
   // التكاليف العامة = ثابتة + صيانة فعلية (بدون الكهرباء لأنها بتتوزع حسب الوزن)
@@ -4564,9 +4564,10 @@ function renderMonthlyCostReport(){
   prodForUnitCost.forEach(p=>{
     if(!p.product)return;
     const k=p.product;
-    if(!unitsByProduct[k]) unitsByProduct[k]={units:0,materials:{},matUnits:0,matCostTotal:0};
+    if(!unitsByProduct[k]) unitsByProduct[k]={units:0,materials:{},matUnits:0,matCostTotal:0,shotDep:0};
     const units=(p.actual||0);
     unitsByProduct[k].units+=units;
+  unitsByProduct[k].shotDep+=calcShotDepRecord(p);
     const mn=p.date?.split('-')[1];
     const monthName=MONTHS[parseInt(mn)-1];
     if(p.material){
@@ -4602,9 +4603,10 @@ function renderMonthlyCostReport(){
     const matEntries=Object.entries(d.materials).sort((a,b)=>b[1]-a[1]);
     const matName=matEntries.length>1?matEntries.map(([n])=>n).join(' / '):(matEntries[0]?.[0]||'');
 
-    const costPerUnit=generalCostPerUnit+elecPerUnit+matCostPerUnit;
+    const shotDepPerUnit=d.units>0?d.shotDep/d.units:0; // إهلاك الماكينة والاسطمبة (بالحقنة) / وحدة
+  const costPerUnit=generalCostPerUnit+elecPerUnit+matCostPerUnit+shotDepPerUnit;
     const totalCostForProduct=costPerUnit*d.units;
-    return{prod,units:d.units,wG,wKg,totalWeightKg,elecPerUnit,generalCostPerUnit,matCostPerUnit,costPerUnit,totalCostForProduct,matName};
+    return{prod,units:d.units,wG,wKg,totalWeightKg,elecPerUnit,generalCostPerUnit,matCostPerUnit,shotDepPerUnit,costPerUnit,totalCostForProduct,matName};
   }).sort((a,b)=>b.totalCostForProduct-a.totalCostForProduct);
   const missingWeight=productRows.some(r=>!r.wG);
   const missingMatPrice=productRows.some(r=>r.wG>0 && r.matCostPerUnit===0);
@@ -4702,6 +4704,7 @@ function renderMonthlyCostReport(){
             <th>تكاليف عامة / وحدة</th>
             <th>كهرباء / وحدة</th>
             <th style="color:#10B981">تكلفة الخامة / وحدة</th>
+  <th>إهلاك ماكينة + اسطمبة / وحدة</th>
             <th style="color:var(--c-primary)">تكلفة الوحدة الإجمالية</th>
           </tr></thead>
           <tbody>
@@ -4713,8 +4716,9 @@ function renderMonthlyCostReport(){
               <td>${fmt(Math.round(r.generalCostPerUnit))} ج.م</td>
               <td>${fmt((r.elecPerUnit).toFixed(2))} ج.م</td>
               <td style="color:#10B981;font-weight:600">${r.matCostPerUnit>0?fmt(r.matCostPerUnit.toFixed(2))+' ج.م':'<span style="font-size:11px;color:var(--c-muted)">أدخل سعر الخامة</span>'}</td>
-              <td style="font-weight:700;font-size:14px;color:var(--c-primary)">${fmt(Math.round(r.costPerUnit))} ج.م</td>
-            </tr>`).join(''):`<tr><td colspan="8" style="text-align:center;color:var(--c-muted);padding:20px">لا يوجد إنتاج مسجل ${selUnitMonth?'في شهر '+selUnitMonth:'لهذه السنة'}</td></tr>`}
+              <td>${r.shotDepPerUnit>0?fmt(r.shotDepPerUnit.toFixed(2))+' ج.م':'—'}</td>
+  <td style="font-weight:700;font-size:14px;color:var(--c-primary)">${fmt(Math.round(r.costPerUnit))} ج.م</td>
+            </tr>`).join(''):`<tr><td colspan="9" style="text-align:center;color:var(--c-muted);padding:20px">لا يوجد إنتاج مسجل ${selUnitMonth?'في شهر '+selUnitMonth:'لهذه السنة'}</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -6126,11 +6130,13 @@ function renderFinSettingsAssets(){
             oninput="finSettings.fixedAssets[${i}].accumulated=Number(this.value)"
             style="width:100%;padding:5px 8px;border:1px solid var(--c-border);border-radius:4px;font-size:12px;font-family:inherit"></div>
       </div>
+      ${assetShotEditor(a,i)}
       <div id="asset-dep-calc-${i}" style="margin-top:8px;font-size:11px;color:var(--c-muted);padding:6px;background:#f9f9f7;border-radius:4px">${calcAssetDepInfo(a)}</div>
     </div>`).join('');
 }
 
 function calcAssetDepInfo(a){
+  if(a.depMethod==='shot') return calcAssetShotInfo(a);
   const cost = a.cost||0;
   const rate = (a.depRate||10)/100;
   const accum= a.accumulated||0;
@@ -6139,6 +6145,34 @@ function calcAssetDepInfo(a){
   const yearsLeft = annualDep>0 ? Math.ceil(bookValue/annualDep) : '∞';
   if(!cost) return '📌 أدخل التكلفة الأصلية لحساب الاستهلاك';
   return `📌 استهلاك سنوي: <strong>${fmt(Math.round(annualDep))} ج.م</strong> | استهلاك شهري: <strong>${fmt(Math.round(annualDep/12))} ج.م</strong> | القيمة الدفترية: <strong style="color:var(--c-primary)">${fmt(Math.round(bookValue))} ج.م</strong> | سنوات متبقية: <strong>${yearsLeft}</strong>`;
+}
+
+
+// ---- واجهة إهلاك الحقنة في إعدادات الأصول ----
+function assetShotDefaults(a){
+  if(!a.shotKind) a.shotKind=/سطمب/.test(a.name||'')?'mold':'machine';
+  if(a.shotKind==='machine'&&!a.shotMachine){ const g=getInjMachines().find(m=>(a.name||'').indexOf(m)>=0); if(g) a.shotMachine=g; }
+  if(a.shotKind==='mold'&&!(a.shotProducts||[]).length){ const core=(a.name||'').replace(/^\s*[اأإ]سطمبة\s*/,'').trim(); if(core) a.shotProducts=PRODUCTS_LIST.filter(p=>p.indexOf(core)>=0); }
+}
+function setAssetDepMethod(i,v){ const a=finSettings.fixedAssets[i]; a.depMethod=v; if(v==='shot') assetShotDefaults(a); renderFinSettingsAssets(); }
+function setAssetShotKind(i,k){ const a=finSettings.fixedAssets[i]; a.shotKind=k; assetShotDefaults(a); renderFinSettingsAssets(); }
+function toggleAssetProduct(i,j,on){ const a=finSettings.fixedAssets[i], p=PRODUCTS_LIST[j]; a.shotProducts=(a.shotProducts||[]).filter(x=>x!==p); if(on) a.shotProducts.push(p); updateAssetDepCalc(i); }
+function assetShotEditor(a,i){
+  const st='width:100%;padding:5px 8px;border:1px solid var(--c-border);border-radius:4px;font-size:12px;font-family:inherit', shot=a.depMethod==='shot';
+  let h=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px"><div class="form-group" style="margin:0"><label style="font-size:11px">طريقة الإهلاك</label><select onchange="setAssetDepMethod(${i},this.value)" style="${st}"><option value="rate"${shot?'':' selected'}>نسبة سنوية %</option><option value="shot"${shot?' selected':''}>بالحقنة (ج.م لكل حقنة)</option></select></div>`;
+  if(!shot) return h+'</div>';
+  h+=`<div class="form-group" style="margin:0"><label style="font-size:11px">إهلاك الحقنة (ج.م)</label><input type="number" min="0" step="0.01" value="${a.shotRate||''}" placeholder="مثال: 0.10" oninput="finSettings.fixedAssets[${i}].shotRate=Number(this.value);updateAssetDepCalc(${i})" style="${st}"></div><div class="form-group" style="margin:0"><label style="font-size:11px">الأصل ده</label><select onchange="setAssetShotKind(${i},this.value)" style="${st}"><option value="machine"${a.shotKind==='mold'?'':' selected'}>ماكينة حقن</option><option value="mold"${a.shotKind==='mold'?' selected':''}>اسطمبة</option></select></div></div>`;
+  if(a.shotKind==='mold') h+=`<div style="margin-top:8px"><label style="font-size:11px;display:block;margin-bottom:4px">المنتجات اللي بتتحقن بالاسطمبة دي (الإهلاك بيتحسب على إنجكشناتها)</label><div style="display:flex;flex-wrap:wrap;gap:6px 14px">${PRODUCTS_LIST.map((p,j)=>`<label style="font-size:12px"><input type="checkbox" ${(a.shotProducts||[]).indexOf(p)>=0?'checked':''} onchange="toggleAssetProduct(${i},${j},this.checked)"> ${p}</label>`).join('')}</div></div>`;
+  else h+=`<div style="margin-top:8px;max-width:260px"><label style="font-size:11px">الماكينة (زي ما بتتسجل في الإنتاج)</label><select onchange="finSettings.fixedAssets[${i}].shotMachine=this.value;updateAssetDepCalc(${i})" style="${st}"><option value="">— اختر —</option>${getInjMachines().map(m=>`<option${a.shotMachine===m?' selected':''}>${m}</option>`).join('')}</select></div>`;
+  return h;
+}
+function calcAssetShotInfo(a){
+  if(!(a.shotRate>0)) return '📌 اكتب إهلاك الحقنة (جنيه لكل حقنة). الأصل ده مش بيتحسب له استهلاك سنوي بالنسبة.';
+  if(a.shotKind==='mold'?!(a.shotProducts||[]).length:!a.shotMachine) return '📌 اختار '+(a.shotKind==='mold'?'المنتجات':'الماكينة')+' اللي الإهلاك بيتحسب على حقناتها.';
+  const yr=String(new Date().getFullYear()); let inj=0;
+  production.forEach(p=>{ if((p.date||'').startsWith(yr)&&assetShotMatch(a,p)) inj+=Number(p.injections)||0; });
+  const book=Math.max(0,(a.cost||0)-(a.accumulated||0));
+  return `📌 إهلاك بالحقنة: <strong>${a.shotRate} ج.م/حقنة</strong> | إنجكشنات ${yr}: <strong>${fmt(inj)}</strong> | إهلاك ${yr} الفعلي: <strong>${fmt(Math.round(inj*a.shotRate))} ج.م</strong>${a.cost?` | عمر الأصل بالحقنات: <strong>${fmt(Math.round(a.cost/a.shotRate))}</strong> | القيمة الدفترية: <strong style="color:var(--c-primary)">${fmt(Math.round(book))} ج.م</strong>`:''}`;
 }
 
 function updateAssetDepCalc(i){
@@ -6150,7 +6184,7 @@ function updateAssetDepCalc(i){
 function addAssetRow(){
   finSettings.fixedAssets.push({
     id: Date.now(), name:'', category:ASSET_CATEGORIES[0],
-    cost:0, purchaseDate:'', depRate:10, accumulated:0, fromEquipment:false
+    cost:0, purchaseDate:'', depRate:10, accumulated:0, fromEquipment:false, depMethod:'rate'
   });
   renderFinSettingsAssets();
 }
@@ -6234,9 +6268,21 @@ function calcTotalFixedAssetsNet(){
 }
 function calcAnnualDepreciation(){
   return (finSettings.fixedAssets||[]).reduce((t,a)=>{
+    if(a.depMethod==='shot') return t; // الأصول اللي إهلاكها بالحقنة مش بتتحسب بالنسبة السنوية
     return t+((a.cost||0)*(a.depRate||0)/100);
   },0);
 }
+// ---- إهلاك بالحقنة (طريقة وحدات الإنتاج) ----
+// أصل (ماكينة أو اسطمبة) ليه سعر إهلاك لكل حقنة (ج.م/حقنة). الإهلاك = عدد الإنجكشنات الفعلية في سجلات الإنتاج × السعر،
+// فالاسطمبة اللي مبتشتغلش طول السنة متتحملش إهلاك سنة كاملة. الماكينة: كل حقنة عليها. الاسطمبة: حقنات المنتجات المربوطة بيها.
+function assetShotMatch(a,p){ return a.shotKind==='mold'?(a.shotProducts||[]).indexOf(p.product)>=0:(!!a.shotMachine&&p.machine===a.shotMachine); }
+function calcShotDepRecord(p){
+  const inj=Number(p.injections)||0; if(!inj) return 0; let r=0;
+  (finSettings.fixedAssets||[]).forEach(a=>{ if(a.depMethod==='shot'&&(a.shotRate||0)>0&&assetShotMatch(a,p)) r+=inj*a.shotRate; });
+  return r;
+}
+function calcShotDepForPeriod(year,months){ return production.reduce((t,p)=>t+(finDateInPeriod(p.date,year,months)?calcShotDepRecord(p):0),0); }
+function getInjMachines(){ const st=new Set(); production.forEach(p=>{ if(p.machine) st.add(p.machine); }); return [...st]; }
 function calcTotalLoans(){
   return (finSettings.loans||[]).reduce((t,l)=>t+(l.remaining||0),0);
 }
@@ -6329,7 +6375,8 @@ function calcFinancials(){
   // استهلاك الأصول للفترة
   const totalAnnualDep = calcAnnualDepreciation();
   const periodMonthsCount = months.length;
-  const periodDep = totalAnnualDep * (periodMonthsCount/12);
+  const periodDepShot = calcShotDepForPeriod(year,months); // إهلاك الأصول اللي بالحقنة (من الإنتاج الفعلي)
+  const periodDep = totalAnnualDep * (periodMonthsCount/12) + periodDepShot;
   // فوائد القروض للفترة
   const totalAnnualInterest = calcAnnualInterest();
   const periodInterest = totalAnnualInterest * (periodMonthsCount/12);
@@ -6381,7 +6428,7 @@ function calcFinancials(){
   return {
     salesTotal, materialCost, elecCost, otherPurchases, cogs,
     grossProfit, grossMargin, handlingCost, handlingFromSales, handlingFromExpenses, opexLines, totalOpex,
-    periodDep, periodInterest, netProfit, netMargin,
+    periodDep, periodDepShot, periodInterest, netProfit, netMargin,
     cashIn_collected, cashOut_pur, cashOut_handling, cashOut_fixed, cashOut_elec, netCashFlow,
     // BS
     estCash, accountsReceivable, invValueFin, totalCurrentAssets,
@@ -6517,7 +6564,7 @@ function renderPL(f, label){
           <tbody>
             ${Object.entries(f.opexLines).map(([k,v])=>row(k,v,true,false)).join('')}
             ${row('إجمالي المصاريف التشغيلية',f.totalOpex,false,true,'var(--c-danger)',true)}
-            ${f.periodDep>0?row('استهلاك الأصول الثابتة',f.periodDep,true,false,'var(--c-danger)'):''}
+            ${f.periodDep>0?row('استهلاك الأصول الثابتة'+(f.periodDepShot>0?' (منه بالحقنة: '+fmt(Math.round(f.periodDepShot))+')':''),f.periodDep,true,false,'var(--c-danger)'):''}
             ${f.periodInterest>0?row('فوائد القروض',f.periodInterest,true,false,'var(--c-danger)'):''}
             ${(f.periodDep>0||f.periodInterest>0)?row('إجمالي المصاريف والاستهلاكات',f.totalOpex+f.periodDep+f.periodInterest,false,true,'var(--c-danger)',true):''}
           </tbody>
@@ -12073,6 +12120,121 @@ function v24OwnUndo(){
   g.undone=true; v24SetCfg('ownLog',lg); v24RenderOwnRe();
 }
 
+// ================= قائمة الأرباح والخسائر الشهرية — مصنع الحقن (سايمد) =================
+// نفس حسابات قائمة الدخل الحالية (مبيعات − تكلفة الإنتاج − توزيع − مصاريف ثابتة − صيانة − إهلاك − فوائد + إيرادات أخرى)، بس موزعة على شهور وبنفس شكل قائمة التعبئة.
+// أساس الاستحقاق: الإيراد = فواتير البيع. الخامات = فواتير الشراء المرتبطة بخامة (لو مفيش، من الإنتاج × أسعار الخامات) + مشتريات أخرى + كهرباء.
+// الأساس النقدي: الإيراد = تحصيلات العملاء، والموردين = سندات الدفع الفعلية، والمصاريف الثابتة/الكهرباء/الفوائد زي قائمة التدفق (استحقاق).
+const FIN_PL_COMPANY='سايمد بلاست';
+function finPlCompute(from,to,basis){
+  const ms=pkPlMonths(from,to), n=ms.length, ix={}; ms.forEach((m,i)=>{ ix[m]=i; });
+  const Z=()=>Array(n).fill(0), put=(a,d,v)=>{ const i=ix[String(d||'').slice(0,7)]; if(i!==undefined) a[i]+=(+v||0); };
+  const sum=a=>a.reduce((t,x)=>t+x,0), plus=(...as)=>as.length?as[0].map((_,i)=>as.reduce((t,a)=>t+a[i],0)):Z();
+  const yr=i=>ms[i].slice(0,4), mn=i=>MONTHS_AR[+ms[i].slice(5,7)-1], accr=basis!=='cash';
+  // الإيرادات
+  const sal=Z(), coll=Z(), oth=Z();
+  sales.forEach(s=>put(sal,s.date,s.total)); payments.forEach(p=>put(coll,p.date,p.amount));
+  treasury.forEach(t=>{ if(t.type==='in'&&t.category==='إيرادات أخرى') put(oth,t.date,t.amount); });
+  purchaseReturns.forEach(r=>{ if(r.wasteSale) put(oth,r.date,r.total); });
+  // الموردين
+  const rawBy={}, otBy={}, payBy={}, ensure=(o,k)=>(o[k]=o[k]||Z());
+  purchases.forEach(p=>{ const sup=p.supplier||'غير محدد'; put(ensure(p.matLink?rawBy:otBy,sup),p.date,p.total); });
+  supplierPayments.forEach(p=>put(ensure(payBy,p.supplier||'غير محدد'),p.date,p.amount));
+  const useLinked=Object.values(rawBy).reduce((t,a)=>t+sum(a),0)>0;
+  const prodMat=Z(); production.forEach(prod=>{ const i=ix[(prod.date||'').slice(0,7)]; if(i===undefined) return; const price=getMaterialPriceValue(prod.material,yr(i),mn(i)); if(price<=0) return;
+    if(prod.matDrawnKg>0) prodMat[i]+=prod.matDrawnKg*price; else { const wt=getProductUnitWeight(prod.product); if(wt>0) prodMat[i]+=(prod.actual||0)*wt*price; } });
+  const elec=ms.map((_,i)=>getElecValue(yr(i),mn(i)));
+  const supL=[]; const addL=(arr,l,v)=>{ if(v.some(x=>x)) arr.push({l,v}); };
+  if(accr){
+    if(useLinked) Object.keys(rawBy).sort().forEach(s=>addL(supL,s+' — خامات',rawBy[s])); else addL(supL,'تكلفة الخامات (من الإنتاج × أسعار الخامات)',prodMat);
+    Object.keys(otBy).sort().forEach(s=>addL(supL,s+' — مشتريات أخرى',otBy[s]));
+  } else Object.keys(payBy).sort().forEach(s=>addL(supL,s+' — مدفوع',payBy[s]));
+  addL(supL,'الكهرباء',elec);
+  // مصاريف التوزيع والتشغيل
+  const hand=Z(); if(accr){ sales.forEach(s=>put(hand,s.date,s.handling)); handlingExpenses.forEach(h=>put(hand,h.date,h.total)); } else treasury.forEach(t=>{ if(t.type==='out'&&t.category==='ناولون / نقل') put(hand,t.date,t.amount); });
+  const maint=Z(), adm=Z(); treasury.forEach(t=>{ if(t.type!=='out') return; if(t.category===V24_MAINT_CAT) put(maint,t.date,t.amount); else if(t.category==='مصاريف إدارية') put(adm,t.date,t.amount); });
+  const opx=[]; addL(opx,accr?'مصاريف التوزيع (الناولون)':'مصاريف التوزيع (الناولون المدفوع)',hand);
+  Object.keys(fixedCosts).forEach(item=>addL(opx,item,ms.map((_,i)=>getFixedCostValue(item,yr(i),mn(i)))));
+  addL(opx,'صيانة',maint); addL(opx,'مرتبات الإدارة (من الخزينة)',adm);
+  if(accr){ addL(opx,'إهلاك الأصول (نسبة سنوية)',Z().map(()=>calcAnnualDepreciation()/12)); const sd=Z(); production.forEach(p=>put(sd,p.date,calcShotDepRecord(p))); addL(opx,'إهلاك الماكينات والاسطمبات (بالحقنة)',sd); }
+  addL(opx,'فوائد القروض',Z().map(()=>calcAnnualInterest()/12));
+  // المخزون اليدوي (بس لما التكلفة من فواتير الشراء)
+  const useStock=accr&&useLinked, st=v24Cfg('finPlStock',{})||{}, close=ms.map(m=>useStock?(+st[m]||0):0), open=ms.map((m,i)=>useStock?(i?close[i-1]:(+st[pkPlPrev(m)]||0)):0);
+  const rev=accr?sal:coll, purch=supL.length?plus(...supL.map(x=>x.v)):Z();
+  const cogs=ms.map((_,i)=>open[i]+purch[i]-close[i]), gross=ms.map((_,i)=>rev[i]-cogs[i]);
+  const opexTot=opx.length?plus(...opx.map(x=>x.v)):Z(), net=ms.map((_,i)=>gross[i]-opexTot[i]+oth[i]);
+  // تدقيق الموردين: مشتريات الفترة مقابل المدفوع
+  const audit=[...new Set([...Object.keys(rawBy),...Object.keys(otBy),...Object.keys(payBy)])].map(s=>({s,purch:sum(rawBy[s]||Z())+sum(otBy[s]||Z()),paid:sum(payBy[s]||Z())})).filter(a=>a.purch||a.paid).sort((a,b)=>b.purch-a.purch);
+  const undated=purchases.filter(p=>!(p.date)).reduce((t,p)=>({n:t.n+1,v:t.v+(+p.total||0)}),{n:0,v:0});
+  return {from,to,basis:accr?'accrual':'cash',ms,rev,supL,opx,oth,open,close,useLinked,useStock,purch,cogs,gross,opexTot,net,audit,undated,sum};
+}
+function finPlModel(R){
+  const n=R.ms.length, sum=R.sum, M=[]; const ratio=(a,b)=>a.map((x,i)=>b[i]?x/b[i]:NaN);
+  const L=(label,v,o)=>M.push(Object.assign({t:'l',label,v,tot:sum(v)},o||{}));
+  M.push({t:'h',label:'الإيرادات'}); L(R.basis==='accrual'?'إيرادات المبيعات (فواتير البيع)':'تحصيلات العملاء',R.rev);
+  M.push({t:'s',label:'إجمالي الإيرادات',v:R.rev,tot:sum(R.rev)});
+  M.push({t:'h',label:'الموردين (خامات ومشتريات وكهرباء)'});
+  if(R.useStock) M.push({t:'op',label:'مخزون أول المدة',v:R.open,tot:R.open[0]||0});
+  R.supL.forEach(x=>L(x.l,x.v));
+  if(R.useStock) M.push({t:'in',label:'(−) مخزون آخر المدة',v:R.close,tot:R.close[n-1]||0});
+  M.push({t:'s',label:'إجمالي الموردين (تكلفة المبيعات)',v:R.cogs,tot:sum(R.cogs)});
+  M.push({t:'t',label:'مجمل الربح',v:R.gross,tot:sum(R.gross)});
+  M.push({t:'p',label:'هامش مجمل الربح %',v:ratio(R.gross,R.rev),tot:sum(R.rev)?sum(R.gross)/sum(R.rev):NaN});
+  M.push({t:'h',label:'مصاريف التشغيل والتوزيع'}); R.opx.forEach(x=>L(x.l,x.v));
+  M.push({t:'s',label:'إجمالي مصاريف التشغيل',v:R.opexTot,tot:sum(R.opexTot)});
+  if(R.oth.some(x=>x)) L('(+) إيرادات أخرى (مبيعات نقدية وبيع هالك)',R.oth);
+  M.push({t:'t',label:'صافي الربح / (الخسارة)',v:R.net,tot:sum(R.net)});
+  M.push({t:'p',label:'هامش صافي الربح %',v:ratio(R.net,R.rev),tot:sum(R.rev)?sum(R.net)/sum(R.rev):NaN});
+  return M;
+}
+function finPlTable(R,edit){
+  const M=finPlModel(R), n=R.ms.length, w=edit&&v24Can('write'); const pc=x=>isFinite(x)?pkPct(x):'—';
+  const rows=M.map(r=>{
+    if(r.t==='h') return `<tr><td colspan="${n+2}" style="background:#eef3f7;font-weight:700">${r.label}</td></tr>`;
+    const bold=(r.t==='s'||r.t==='t'), bg=r.t==='t'?'background:#f5f5f0;':'', st=`${bg}${bold?'font-weight:700;border-top:1px solid #bbb;':''}`;
+    let cells;
+    if(r.t==='p') cells=r.v.map(x=>`<td style="font-size:11px;color:#666">${pc(x)}</td>`).join('')+`<td style="font-size:11px;color:#666">${pc(r.tot)}</td>`;
+    else if(r.t==='in'&&w) cells=r.v.map((x,i)=>`<td><input type="number" step="1" min="0" style="width:92px" value="${x||''}" onchange="finPlSaveStock('${R.ms[i]}',this.value)"></td>`).join('')+`<td>${pkPlF(r.tot)}</td>`;
+    else if(r.t==='op'&&w) cells=r.v.map((x,i)=>i?`<td>${pkPlF(x)}</td>`:`<td><input type="number" step="1" min="0" style="width:92px" value="${x||''}" onchange="finPlSaveStock('${pkPlPrev(R.ms[0])}',this.value)"></td>`).join('')+`<td>${pkPlF(r.tot)}</td>`;
+    else cells=r.v.map(x=>`<td>${pkPlF(x)}</td>`).join('')+`<td style="font-weight:700">${pkPlF(r.tot)}</td>`;
+    return `<tr style="${st}"><td style="${r.t==='l'?'padding-right:18px':''}">${v24Esc(r.label)}</td>${cells}</tr>`;
+  }).join('');
+  return `<table class="v24-table"><thead><tr><th style="min-width:240px">البند</th>${R.ms.map(m=>`<th>${m}</th>`).join('')}<th>الإجمالي</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function finPlGet(){
+  const yr=today().slice(0,4); const f=document.getElementById('finpl-from'), t=document.getElementById('finpl-to'), b=document.getElementById('finpl-basis');
+  let from=(f&&f.value)||yr+'-01', to=(t&&t.value)||today().slice(0,7); if(from>to){ const x=from; from=to; to=x; }
+  return finPlCompute(from,to,(b&&b.value)||'accrual');
+}
+function finRenderPL(){
+  const body=document.getElementById('finpl-body'); if(!body) return;
+  const f=document.getElementById('finpl-from'), t=document.getElementById('finpl-to'); if(!f.value) f.value=today().slice(0,4)+'-01'; if(!t.value) t.value=today().slice(0,7);
+  const R=finPlGet(), s=R.sum, kp=(l,v,c)=>`<div class="v24-kpi"><div class="l">${l}</div><div class="v" ${c?`style="color:${c}"`:''}>${v}</div></div>`;
+  const nr=s(R.rev), gr=s(R.gross), nt=s(R.net);
+  document.getElementById('finpl-kpis').innerHTML=kp(R.basis==='accrual'?'إيرادات المبيعات':'التحصيلات',pkF(nr))+kp('مجمل الربح',pkF(gr),gr<0?'#c62828':'#2e7d32')+kp('صافي الربح / (الخسارة)',pkF(nt),nt<0?'#c62828':'#2e7d32')+kp('هامش صافي الربح',nr?pkPct(nt/nr):'—');
+  body.innerHTML=finPlTable(R,true);
+  const au=document.getElementById('finpl-audit');
+  if(au) au.innerHTML=R.audit.length?`<div class="card" style="margin-top:12px"><div class="card-body" style="padding:10px;overflow:auto"><b>تدقيق الموردين — مشتريات الفترة مقابل المدفوع</b><table class="v24-table" style="margin-top:6px"><thead><tr><th>المورد</th><th>مشتريات الفترة</th><th>مدفوع الفترة</th><th>الفرق (زيادة المستحق)</th></tr></thead><tbody>${R.audit.map(a=>`<tr><td>${v24Esc(a.s)}</td><td>${pkF(a.purch)}</td><td>${pkF(a.paid)}</td><td>${pkF(a.purch-a.paid)}</td></tr>`).join('')}</tbody></table></div></div>`:'';
+  const accr=R.basis==='accrual';
+  document.getElementById('finpl-note').innerHTML=(accr?'<b>أساس الاستحقاق (نفس حساب قائمة الدخل الموجودة):</b> الإيراد = فواتير البيع بتاريخها. الخامات = '+(R.useLinked?'فواتير الشراء المرتبطة بخامة':'تكلفة الإنتاج × أسعار الخامات (مفيش فواتير شراء مرتبطة بخامة في الفترة)')+'، ومعاها المشتريات الأخرى والكهرباء. الإهلاك والفوائد مقسمين على 12 شهر.':'<b>الأساس النقدي (زي قائمة التدفق):</b> الإيراد = تحصيلات العملاء، والموردين = سندات الدفع الفعلية، والمصاريف الثابتة والكهرباء والفوائد بالاستحقاق.')
+   +(R.useStock?'':(accr?'<br>• مخزون أول/آخر المدة مش بيتحسب هنا لأن تكلفة الخامات محسوبة من الإنتاج.':''))
+   +(R.useStock&&!R.close.some(x=>x)&&!R.open.some(x=>x)?'<br>• <b>مخزون آخر المدة مش مسجل:</b> التكلفة = كل مشتريات الفترة، مش المستهلك فعلًا. اكتب قيمة المخزون آخر كل شهر في الصف المخصوص لتتظبط تكلفة المبيعات.':'')
+   +(R.undated.n?`<br>• <b>${R.undated.n} فاتورة شراء بدون تاريخ</b> (إجمالي ${pkF(R.undated.v)}) مش داخلة في أي شهر، زي قائمة الدخل الموجودة. حط لها تاريخ من تاب المشتريات.`:'')
+   +'<br>• الأرقام بتعتمد على اكتمال تسجيل المبيعات والمصروفات في البرنامج.';
+}
+function finPlSaveStock(m,v){ if(!v24Can('write')){ alert('مفيش صلاحية تعديل'); return; } const o=Object.assign({},v24Cfg('finPlStock',{})||{}); const x=pkN(v); if(x) o[m]=x; else delete o[m]; v24SetCfg('finPlStock',o); finRenderPL(); }
+function finPlPrint(){
+  const R=finPlGet(); const pw=window.open('','_blank'); if(!pw){ alert('المتصفح منع نافذة الطباعة — اسمح بالنوافذ المنبثقة وجرّب تاني'); return; }
+  pw.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>قائمة الأرباح والخسائر</title><style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#2c2c2a;font-size:11px;direction:rtl}h2{margin:0 0 4px;color:#0f7b6c}.sub{color:#666;margin-bottom:10px}table{width:100%;border-collapse:collapse}th,td{padding:4px 6px;border:1px solid #d3d1c7;text-align:right}th{background:#f5f5f0}</style></head><body><h2>${v24Esc(FIN_PL_COMPANY)} — قائمة الأرباح والخسائر</h2><div class="sub">الفترة: ${R.from} إلى ${R.to} — ${R.basis==='accrual'?'أساس الاستحقاق':'الأساس النقدي'}</div>${finPlTable(R,false)}<script>window.print()<\/script></body></html>`);
+  pw.document.close();
+}
+function finPlCsv(){
+  const R=finPlGet(), M=finPlModel(R), r2=x=>Math.round((+x||0)*100)/100, pc=x=>isFinite(x)?(x*100).toFixed(1)+'%':'';
+  const rows=[['البند',...R.ms,'الإجمالي']];
+  M.forEach(r=>{ if(r.t==='h') rows.push([r.label]); else if(r.t==='p') rows.push([r.label,...r.v.map(pc),pc(r.tot)]); else rows.push([r.label,...r.v.map(r2),r2(r.tot)]); });
+  const csv='\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='قائمة_أرباح_وخسائر_الحقن_'+R.from+'_'+R.to+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
+
 // ================= v24 — تركيب الصفحات والتهيئة =================
 (function v24Boot(){
   v24InitLast();
@@ -12110,6 +12272,7 @@ function v24OwnUndo(){
   v24AddPage('finance','custody','👛 العُهد',v24RenderCustody,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">الصرف للشخص بيتسجل من الخزينة بند «عهدة (صرف لشخص)». هنا بتسجّل مصروفاته بالإيصالات، والباقي نقدًا بيرجع بند «تسوية / رد عهدة».</p><div class="v24-kpis" id="cus-kpis"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="cus-body"></div></div></div>`);
   v24AddPage('finance','owners','👤 حسابات الملاك',v24RenderOwners,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">كل مالك: كام سحب وكام دخّل في الخزنة. المصدر بنود الخزينة «سحب مالك / أرباح» و«رأس مال / إيداع مالك» وغيرها من بنود الملاك، بحسب اسم المالك.</p><div style="margin-bottom:10px"><select id="own-year" onchange="v24RenderOwners()" style="padding:6px 10px"></select></div><div class="v24-kpis" id="own-kpis"></div><div class="card"><div class="card-body" style="padding:12px;overflow:auto" id="own-body"></div></div></div>`);
   v24AddPage('finance','own-reclass','🧮 تصنيف حركات الملاك',v24RenderOwnRe,`<div class="p-content"><div id="ownre-body"></div></div>`);
+  v24AddPage('finance','fin-pl-monthly','📈 قائمة الأرباح والخسائر (شهرية)',finRenderPL,`<div class="p-content"><div class="v24-warn" id="finpl-note"></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px"><label style="font-size:12px">من <input type="month" id="finpl-from" onchange="finRenderPL()"></label><label style="font-size:12px">إلى <input type="month" id="finpl-to" onchange="finRenderPL()"></label><select id="finpl-basis" onchange="finRenderPL()" style="padding:6px 10px"><option value="accrual">أساس الاستحقاق</option><option value="cash">الأساس النقدي</option></select><button class="btn" onclick="finPlPrint()">🖨 طباعة</button><button class="btn" onclick="finPlCsv()">📄 تصدير CSV</button></div><div class="v24-kpis" id="finpl-kpis"></div><div class="card"><div class="card-body" style="padding:0;overflow:auto" id="finpl-body"></div></div><div id="finpl-audit"></div></div>`);
   v24AddPage('finance','openbal','📌 أرصدة افتتاحية 2025',v24RenderOpenBal,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">سجّل رصيد كل عميل ومورد ومالك منقول من سنة 2025. بيظهر في كشف الحساب باسم «رصيد افتتاحي منقول من 2025».</p><div id="ob-body"></div></div>`);
   v24AddPage('finance','reroute','🔀 تصحيح توجيه الحركات',v24RenderReroute,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">بينقل حركات عملاء التعبئة والتغليف (أحمد مصطفى، اسلام سليمان/سليمان بلاست، محمد صلاح/زاد، الشيف مصطفى) وبيع الكراتين من خزينة الحقن لأماكنها الصح، من غير ما تعيد أي شغل.</p><div id="rr-body"></div></div>`);
   v24AddPage('finance','fixcash','🧮 تطبيق تصحيحات الخزنة',v24RenderFix,`<div class="p-content"><p style="font-size:12px;color:#666;margin-bottom:10px">تصحيحات مقارنة الخزنة بالشيتات (1/11): إضافة الناقص، حذف المكرر والزايد، وتوحيد المبالغ. بمعاينة قبل التنفيذ وزرار تراجع.</p><div id="fx-body"></div></div>`);
