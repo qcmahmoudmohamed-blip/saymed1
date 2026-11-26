@@ -428,9 +428,10 @@ tr:hover td{background:#fafaf8}
     </select>
   </div>
   <div class="card"><div class="card-body" style="padding:0"><table>
-    <thead><tr><th>م</th><th>الكود</th><th>الاسم</th><th>الفئة</th><th>الموقع</th><th>الحالة</th><th>صيانات</th><th>توقف (س)</th><th>تكلفة (ج.م)</th><th></th></tr></thead>
+    <thead><tr><th>م</th><th>الكود</th><th>الاسم</th><th>الفئة</th><th>الموقع</th><th>الحالة</th><th>صيانات</th><th>توقف صيانة (س)</th><th>أيام التوقف (السنة)</th><th>تكلفة (ج.م)</th><th></th></tr></thead>
     <tbody id="equipment-tbody"></tbody>
   </table></div></div>
+  <div id="eq-stopdays"></div>
 </div>
 
 <!-- MAINTENANCE -->
@@ -2898,8 +2899,9 @@ function renderEquipment(){
   workOrders.forEach(w=>{woCosts[w.equipId]=(woCosts[w.equipId]||{cnt:0,hrs:0,cost:0});woCosts[w.equipId].cnt++;woCosts[w.equipId].hrs+=(w.hours||0);woCosts[w.equipId].cost+=(w.totalCost||0)});
   document.getElementById('equipment-tbody').innerHTML=filtered.map((e,i)=>{
     const s=woCosts[e.id]||{cnt:0,hrs:0,cost:0};
-    return`<tr><td>${i+1}</td><td style="font-family:monospace;color:var(--c-primary)">${e.code}</td><td><strong>${e.name}</strong></td><td>${e.cat}</td><td>${e.location}</td><td>${eqStatusBadge(e.status)}${eqStopInfo(e)}</td><td>${s.cnt}</td><td>${s.hrs}</td><td>${fmt(s.cost)}</td><td style="white-space:nowrap"><button class="btn" style="font-size:11px;padding:4px 8px" onclick="editEquipment(${e.id})">تعديل</button> <button class="btn" style="font-size:11px;padding:4px 8px" onclick="openEquipProfile(${e.id})" title="الملف التعريفي السنوي">📋</button></td></tr>`;
+    return`<tr><td>${i+1}</td><td style="font-family:monospace;color:var(--c-primary)">${e.code}</td><td><strong>${e.name}</strong></td><td>${e.cat}</td><td>${e.location}</td><td>${eqStatusBadge(e.status)}${eqStopInfo(e)}</td><td>${s.cnt}</td><td>${s.hrs}</td><td>${eqIsInj(e)?eqStopDaysCell(e):'—'}</td><td>${fmt(s.cost)}</td><td style="white-space:nowrap"><button class="btn" style="font-size:11px;padding:4px 8px" onclick="editEquipment(${e.id})">تعديل</button> <button class="btn" style="font-size:11px;padding:4px 8px" onclick="openEquipProfile(${e.id})" title="الملف التعريفي السنوي">📋</button></td></tr>`;
   }).join('');
+  if(typeof renderEqStopDays==='function') renderEqStopDays();
 }
 function editEquipment(id){
   const e=equipment.find(x=>x.id===id);if(!e)return;
@@ -12233,6 +12235,91 @@ function finPlCsv(){
   M.forEach(r=>{ if(r.t==='h') rows.push([r.label]); else if(r.t==='p') rows.push([r.label,...r.v.map(pc),pc(r.tot)]); else rows.push([r.label,...r.v.map(r2),r2(r.tot)]); });
   const csv='\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='قائمة_أرباح_وخسائر_الحقن_'+R.from+'_'+R.to+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ================= أيام توقف الماكينات (تلقائي من سجلات الإنتاج) =================
+// يوم التوقف = يوم شغل مفيش فيه إنتاج على الماكينة (من أول يوم إنتاج مسجل لها لحد آخر يوم إنتاج مسجل أو التاريخ اللي تختاره).
+// الإجازة الأسبوعية (الجمعة افتراضي) والعطلات المسجلة مش بتتحسب توقف إلا لو الماكينة اشتغلت فيها.
+// سبب كل يوم: صيانة (أمر صيانة بساعات توقف) ← توقف مسجل في الإنتاج ← حالة المعدة (متوقفة/تحت الصيانة) ← بدون إنتاج (غير مفسّر).
+const EQ_DAYS_AR=['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+const EQ_CAUSE={maint:'صيانة',prodstop:'توقف مسجل في الإنتاج',status:'حالة المعدة (متوقفة)',manual:'سبب مسجّل يدويًا',nopro:'بدون إنتاج (غير مفسّر)'};
+function eqAddDays(d,n){ const x=new Date(d+'T12:00:00Z'); x.setUTCDate(x.getUTCDate()+n); return x.toISOString().slice(0,10); }
+function eqDow(d){ return new Date(d+'T12:00:00Z').getUTCDay(); }
+function eqStopCfg(){ const c=v24Cfg('stopCal',null)||{}; return {off:Array.isArray(c.off)?c.off:[5],hol:Array.isArray(c.hol)?c.hol:[]}; }
+function eqIsInj(e){ return e.cat==='ماكينة حقن'; }
+function eqLastProdDate(){ const t=today(); let m=''; production.forEach(p=>{ if(p.date&&p.date<=t&&p.date>m) m=p.date; }); return m||t; }
+function eqStopDaysCalc(e,from,to){
+  const cfg=eqStopCfg(), names=[e.model,e.name].filter(Boolean), mine=production.filter(p=>p.date&&names.indexOf(p.machine)>=0);
+  const out={e,from,to,hasData:mine.length>0,total:0,off:0,prodDays:0,days:[],ranges:[],byCause:{maint:0,prodstop:0,status:0,manual:0,nopro:0},avail:null};
+  if(!mine.length) return out;
+  const first=mine.reduce((m,p)=>p.date<m?p.date:m,mine[0].date); const start=from>first?from:first; out.start=start; if(start>to) return out;
+  const prodSet=new Set(mine.filter(p=>(p.actual||0)>0).map(p=>p.date)), byDate={}; // يوم تشغيل = فيه إنتاج سليم (كمية > 0)
+  mine.forEach(p=>{ (byDate[p.date]=byDate[p.date]||[]).push(p); });
+  const maint={}; workOrders.filter(w=>w.equipId==e.id&&(w.hours||0)>0&&w.date).forEach(w=>{ const n=Math.max(1,Math.ceil(w.hours/24)); for(let k=0;k<n;k++){ const d=eqAddDays(w.date,k); (maint[d]=maint[d]||[]).push(w); } });
+  const isOff=d=>cfg.off.indexOf(eqDow(d))>=0||cfg.hol.indexOf(d)>=0;
+  for(let d=start;d<=to;d=eqAddDays(d,1)){
+    out.total++;
+    if(prodSet.has(d)){ out.prodDays++; continue; }
+    if(isOff(d)){ out.off++; continue; }
+    let cause='nopro', reason='';
+    if(maint[d]){ cause='maint'; reason=maint[d].map(w=>w.no+(w.type?' ('+w.type+')':'')).join('، '); }
+    else if((byDate[d]||[]).some(p=>(p.downtime||0)>0||p.stopReason)){ cause='prodstop'; reason=[...new Set(byDate[d].map(p=>(p.stopReason||'').trim()).filter(Boolean))].join('، ')||'توقف مسجل'; }
+    else if(e.stopFrom&&d>=e.stopFrom&&d<=(e.stopTo||'9999-12-31')){ cause='status'; reason=e.stopReason||''; }
+    out.days.push({d,cause,reason}); out.byCause[cause]++;
+  }
+  // تجميع الأيام المتتالية (الإجازات بين الأيام متكسرش التتابع) لنفس السبب
+  const between=(a,b)=>{ for(let d=eqAddDays(a,1);d<b;d=eqAddDays(d,1)){ if(!isOff(d)||prodSet.has(d)) return false; } return true; };
+  out.days.forEach(x=>{ const r=out.ranges[out.ranges.length-1]; if(r&&r.cause===x.cause&&r.reason===x.reason&&between(r.to,x.d)){ r.to=x.d; r.n++; } else out.ranges.push({from:x.d,to:x.d,n:1,cause:x.cause,reason:x.reason}); });
+  // الفترات غير المفسّرة اللي المستخدم كتب لها سبب بتتحسب «سبب مسجّل يدويًا»
+  const notes=v24Cfg('stopNotes',{})||{};
+  out.ranges.forEach(r=>{ if(r.cause!=='nopro') return; const nt=notes[e.id+'|'+r.from]; if(!nt) return; r.cause='manual'; r.reason=nt; out.byCause.nopro-=r.n; out.byCause.manual+=r.n; out.days.forEach(x=>{ if(x.d>=r.from&&x.d<=r.to&&x.cause==='nopro'){ x.cause='manual'; x.reason=nt; } }); });
+  const wd=out.prodDays+out.days.length; out.avail=wd?out.prodDays/wd:null;
+  return out;
+}
+function eqStopDaysCell(e){
+  const to=eqLastProdDate(), from=today().slice(0,4)+'-01-01', r=eqStopDaysCalc(e,from,to);
+  if(!r.hasData) return '<span style="color:var(--c-muted);font-size:11px">لا إنتاج مسجل</span>';
+  return `<a href="#eq-stopdays" style="text-decoration:none"><strong style="color:${r.days.length?'var(--c-danger)':'var(--c-success)'}">${r.days.length}</strong> يوم</a>`;
+}
+function eqSdSaveCfg(){
+  const off=[0,1,2,3,4,5,6].filter(i=>document.getElementById('eqsd-off'+i)&&document.getElementById('eqsd-off'+i).checked);
+  const c=eqStopCfg(); v24SetCfg('stopCal',{off,hol:c.hol}); renderEqStopDays();
+}
+function eqSdSaveNote(id,from,val){ const n=Object.assign({},v24Cfg('stopNotes',{})||{}); const k=id+'|'+from; if(String(val).trim()) n[k]=String(val).trim(); else delete n[k]; v24SetCfg('stopNotes',n); renderEqStopDays(); }
+function eqSdAddHoliday(){ const d=(document.getElementById('eqsd-hol')||{}).value; if(!d) return; const c=eqStopCfg(); if(c.hol.indexOf(d)<0) c.hol.push(d); c.hol.sort(); v24SetCfg('stopCal',c); renderEqStopDays(); }
+function eqSdDelHoliday(d){ const c=eqStopCfg(); c.hol=c.hol.filter(x=>x!==d); v24SetCfg('stopCal',c); renderEqStopDays(); }
+function eqSdPreset(k){
+  const to=eqLastProdDate(); let from=today().slice(0,4)+'-01-01';
+  if(k==='month') from=to.slice(0,7)+'-01'; else if(k==='30') from=eqAddDays(to,-29); else if(k==='all') from='2000-01-01';
+  document.getElementById('eqsd-from').value=from; document.getElementById('eqsd-to').value=to; renderEqStopDays();
+}
+function eqSdGet(){
+  const f=document.getElementById('eqsd-from'), t=document.getElementById('eqsd-to'); const to0=eqLastProdDate();
+  if(f&&!f.value) f.value=today().slice(0,4)+'-01-01'; if(t&&!t.value) t.value=to0;
+  let from=(f&&f.value)||today().slice(0,4)+'-01-01', to=(t&&t.value)||to0; if(from>to){ const x=from; from=to; to=x; }
+  return {from,to,res:equipment.filter(eqIsInj).map(e=>eqStopDaysCalc(e,from,to))};
+}
+function renderEqStopDays(){
+  const host=document.getElementById('eq-stopdays'); if(!host) return;
+  if(!document.getElementById('eqsd-from')){
+    host.innerHTML=`<div class="card" style="margin-top:16px"><div class="card-header"><h3>📅 أيام التوقف الفعلية لماكينات الحقن (تلقائي)</h3></div><div class="card-body">
+    <div style="font-size:12px;color:var(--c-muted);line-height:1.8;margin-bottom:10px">أي يوم شغل مفيش فيه إنتاج على الماكينة بيتحسب يوم توقف — مش أيام الصيانة بس. بيتحسب من سجلات الإنتاج من أول يوم إنتاج مسجل للماكينة. الإجازة الأسبوعية والعطلات مش بتتحسب توقف (إلا لو الماكينة اشتغلت فيها).</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px"><label style="font-size:12px">من <input type="date" id="eqsd-from" onchange="renderEqStopDays()"></label><label style="font-size:12px">إلى <input type="date" id="eqsd-to" onchange="renderEqStopDays()"></label>
+    <button class="btn" onclick="eqSdPreset('year')">السنة</button><button class="btn" onclick="eqSdPreset('month')">آخر شهر</button><button class="btn" onclick="eqSdPreset('30')">آخر 30 يوم</button><button class="btn" onclick="eqSdPreset('all')">كل الفترة</button><button class="btn" onclick="eqSdCsv()">📄 تصدير الأيام CSV</button></div>
+    <div id="eqsd-cal" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;margin-bottom:12px"></div><div id="eqsd-body"></div></div></div>`;
+  }
+  const cfg=eqStopCfg(); const cal=document.getElementById('eqsd-cal');
+  cal.innerHTML=`<span style="font-weight:600">الإجازة الأسبوعية:</span>${EQ_DAYS_AR.map((n,i)=>`<label><input type="checkbox" id="eqsd-off${i}" ${cfg.off.indexOf(i)>=0?'checked':''} onchange="eqSdSaveCfg()"> ${n}</label>`).join('')}<span style="margin-right:12px;font-weight:600">عطلات:</span><input type="date" id="eqsd-hol"><button class="btn" onclick="eqSdAddHoliday()">➕ إضافة</button>${cfg.hol.map(d=>`<span class="badge badge-gray" style="cursor:pointer" title="اضغط للحذف" onclick="eqSdDelHoliday('${d}')">${d} ✖</span>`).join(' ')}`;
+  const g=eqSdGet(), esc=x=>String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const pc=x=>x==null?'—':Math.round(x*100)+'%';
+  const rowsHtml=g.res.map(r=>`<tr><td><strong>${esc(r.e.name)}</strong></td>${r.hasData?`<td>${r.total}</td><td>${r.off}</td><td>${r.prodDays}</td><td style="font-weight:700;color:${r.days.length?'var(--c-danger)':'var(--c-success)'}">${r.days.length}</td><td>${pc(r.avail)}</td><td>${r.byCause.maint}</td><td>${r.byCause.prodstop}</td><td>${r.byCause.status}</td><td>${r.byCause.manual}</td><td style="${r.byCause.nopro?'color:var(--c-danger);font-weight:700':''}">${r.byCause.nopro}</td>`:'<td colspan="10" style="color:var(--c-muted)">لا يوجد إنتاج مسجل للماكينة دي</td>'}</tr>`).join('');
+  const det=g.res.filter(r=>r.hasData&&r.ranges.length).map(r=>`<details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;font-weight:600">${esc(r.e.name)} — ${r.days.length} يوم توقف في ${r.ranges.length} فترة</summary><div style="overflow:auto"><table style="margin-top:6px"><thead><tr><th>من</th><th>إلى</th><th>عدد الأيام</th><th>السبب</th><th>تفاصيل</th></tr></thead><tbody>${r.ranges.map(x=>`<tr><td>${x.from}</td><td>${x.to}</td><td><strong>${x.n}</strong></td><td>${EQ_CAUSE[x.cause]}</td><td style="font-size:11px">${(x.cause==='nopro'||x.cause==='manual')?`<input type="text" value="${esc(x.cause==='manual'?x.reason:'')}" placeholder="اكتب سبب التوقف…" style="width:100%;min-width:180px;padding:4px 6px;border:1px solid var(--c-border);border-radius:4px;font-size:12px" onchange="eqSdSaveNote('${r.e.id}','${x.from}',this.value)">`:esc(x.reason)}</td></tr>`).join('')}</tbody></table></div></details>`).join('');
+  document.getElementById('eqsd-body').innerHTML=`<div style="overflow:auto"><table><thead><tr><th>الماكينة</th><th>أيام الفترة</th><th>إجازات</th><th>أيام تشغيل</th><th>أيام التوقف</th><th>الإتاحة</th><th>صيانة</th><th>توقف مسجل بالإنتاج</th><th>حالة المعدة</th><th>سبب مسجّل</th><th>بدون إنتاج (غير مفسّر)</th></tr></thead><tbody>${rowsHtml}</tbody></table></div><div style="font-size:11px;color:var(--c-muted);margin-top:6px">الإتاحة = أيام التشغيل ÷ (أيام التشغيل + أيام التوقف). الفترة بتتحسب لحد آخر يوم إنتاج مسجل (${g.to}) عشان الأيام اللي لسه متسجلتش متتحسبش توقف. «بدون إنتاج (غير مفسّر)» = يوم مفيش عليه إنتاج ولا أمر صيانة ولا سبب توقف مسجل. افتح الماكينة تحت واكتب سبب كل فترة فتتحسب «سبب مسجّل».</div>${det}`;
+}
+function eqSdCsv(){
+  const g=eqSdGet(), rows=[['الماكينة','التاريخ','السبب','التفاصيل']]; g.res.forEach(r=>r.days.forEach(x=>rows.push([r.e.name,x.d,EQ_CAUSE[x.cause],x.reason])));
+  const csv='\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='ايام_توقف_الماكينات_'+g.from+'_'+g.to+'.csv'; document.body.appendChild(a); a.click(); a.remove();
 }
 
 // ================= v24 — تركيب الصفحات والتهيئة =================
