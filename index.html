@@ -3485,7 +3485,7 @@ function renderPMAnnualReport(){
   `;
 
   // ===== Per-equipment profile cards =====
-  document.getElementById('pmr-body').innerHTML = profiles.map(prof=>{
+  document.getElementById('pmr-body').innerHTML = (eqFilter?'':pmrMachinesCompare(eqList,year)) + profiles.map(prof=>{
     const {eq, pmEvals, woEval, prodEval} = prof;
 
     // --- قسم الصيانة الوقائية ---
@@ -3565,6 +3565,8 @@ function renderPMAnnualReport(){
           <div style="font-size:13px;font-weight:700;color:var(--c-primary);margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--c-border)">📈 الإنتاجية</div>
           ${prodSectionHtml}
         </div>
+ ${eqIsInj(eq)?pmrStopSection(eq,year):''}
+ ${pmrMaintCharts(eq,year,woEval,prodEval)}
       </div>
     </div>`;
   }).join('');
@@ -3577,7 +3579,7 @@ function printPMAnnualReport(){
   const pw = window.open('','_blank');
   pw.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
   <title>الملف التعريفي السنوي للمعدات — ${year}</title>
-  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#fff;color:#2c2c2a;direction:rtl;font-size:12px;padding:20px}
+  <style>:root{--c-primary:#0f6e56;--c-border:#d3d1c7;--c-muted:#888;--c-danger:#dc2626;--c-success:#16a34a;--c-warn:#d97706;--c-bg:#fff}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}svg{max-width:100%}*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#fff;color:#2c2c2a;direction:rtl;font-size:12px;padding:20px}
   table{width:100%;border-collapse:collapse;margin-top:8px}th,td{padding:6px 9px;border:1px solid #d3d1c7;text-align:right}th{background:#f5f5f0;font-weight:700}
   .card{border:1px solid #d3d1c7;border-radius:6px;margin-bottom:18px;page-break-inside:avoid}.card-header{padding:10px 14px;background:#f5f5f0;font-weight:700;font-size:13px;display:flex;justify-content:space-between}
   .card-body{padding:12px}.metric{display:inline-block;border:1px solid #d3d1c7;border-radius:6px;padding:8px 12px;margin:3px}
@@ -12250,7 +12252,7 @@ function eqIsInj(e){ return e.cat==='ماكينة حقن'; }
 function eqLastProdDate(){ const t=today(); let m=''; production.forEach(p=>{ if(p.date&&p.date<=t&&p.date>m) m=p.date; }); return m||t; }
 function eqStopDaysCalc(e,from,to){
   const cfg=eqStopCfg(), names=[e.model,e.name].filter(Boolean), mine=production.filter(p=>p.date&&names.indexOf(p.machine)>=0);
-  const out={e,from,to,hasData:mine.length>0,total:0,off:0,prodDays:0,days:[],ranges:[],byCause:{maint:0,prodstop:0,status:0,manual:0,nopro:0},avail:null};
+  const out={e,from,to,hasData:mine.length>0,total:0,off:0,prodDays:0,prodList:[],offList:[],days:[],ranges:[],byCause:{maint:0,prodstop:0,status:0,manual:0,nopro:0},avail:null};
   if(!mine.length) return out;
   const first=mine.reduce((m,p)=>p.date<m?p.date:m,mine[0].date); const start=from>first?from:first; out.start=start; if(start>to) return out;
   const prodSet=new Set(mine.filter(p=>(p.actual||0)>0).map(p=>p.date)), byDate={}; // يوم تشغيل = فيه إنتاج سليم (كمية > 0)
@@ -12259,8 +12261,8 @@ function eqStopDaysCalc(e,from,to){
   const isOff=d=>cfg.off.indexOf(eqDow(d))>=0||cfg.hol.indexOf(d)>=0;
   for(let d=start;d<=to;d=eqAddDays(d,1)){
     out.total++;
-    if(prodSet.has(d)){ out.prodDays++; continue; }
-    if(isOff(d)){ out.off++; continue; }
+    if(prodSet.has(d)){ out.prodDays++; out.prodList.push(d); continue; }
+    if(isOff(d)){ out.off++; out.offList.push(d); continue; }
     let cause='nopro', reason='';
     if(maint[d]){ cause='maint'; reason=maint[d].map(w=>w.no+(w.type?' ('+w.type+')':'')).join('، '); }
     else if((byDate[d]||[]).some(p=>(p.downtime||0)>0||p.stopReason)){ cause='prodstop'; reason=[...new Set(byDate[d].map(p=>(p.stopReason||'').trim()).filter(Boolean))].join('، ')||'توقف مسجل'; }
@@ -12320,6 +12322,108 @@ function eqSdCsv(){
   const g=eqSdGet(), rows=[['الماكينة','التاريخ','السبب','التفاصيل']]; g.res.forEach(r=>r.days.forEach(x=>rows.push([r.e.name,x.d,EQ_CAUSE[x.cause],x.reason])));
   const csv='\ufeff'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='ايام_توقف_الماكينات_'+g.from+'_'+g.to+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ================= رسومات وتحليل التوقف في الملف التعريفي للمعدات =================
+const PMR_COL={prod:'#86efac',off:'#e5e7eb',none:'#ffffff',maint:'#3b82f6',prodstop:'#f59e0b',status:'#8b5cf6',manual:'#14b8a6',nopro:'#ef4444'};
+const PMR_LBL={prod:'تشغيل (فيه إنتاج)',off:'إجازة',none:'خارج الفترة',maint:'صيانة',prodstop:'توقف مسجل في الإنتاج',status:'حالة المعدة (متوقفة)',manual:'سبب مسجّل يدويًا',nopro:'بدون إنتاج (غير مفسّر)'};
+const PMR_STOP_KEYS=['maint','prodstop','status','manual','nopro'];
+const PMR_MON=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+const PMR_CHART_STYLE='-webkit-print-color-adjust:exact;print-color-adjust:exact;page-break-inside:avoid';
+const PMR_SVG_STYLE='direction:ltr;unicode-bidi:isolate;'+PMR_CHART_STYLE;
+function pmrEsc(x){ return String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function pmrLegend(keys,counts){ return `<div style="display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11px;margin-top:6px">${keys.map(k=>`<span><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:${PMR_COL[k]};border:1px solid #cbd5e1;vertical-align:-1px;margin-left:4px;${PMR_CHART_STYLE}"></span>${PMR_LBL[k]}${counts&&counts[k]!=null?' <strong>'+counts[k]+'</strong>':''}</span>`).join('')}</div>`; }
+function pmrBox(title,inner,note){ return `<div style="border:1px solid #d3d1c7;border-radius:8px;padding:10px;margin-bottom:10px;${PMR_CHART_STYLE}"><div style="font-size:12px;font-weight:700;margin-bottom:6px">${title}</div>${inner}${note?`<div style="font-size:10px;color:#888;margin-top:4px">${note}</div>`:''}</div>`; }
+// دونات: أيام التوقف حسب السبب
+function pmrDonut(byCause){
+  const parts=PMR_STOP_KEYS.map(k=>({k,v:byCause[k]||0})).filter(x=>x.v>0), tot=parts.reduce((t,x)=>t+x.v,0);
+  if(!tot) return '<div style="font-size:12px;color:#16a34a;padding:10px">لا توجد أيام توقف في الفترة 🎉</div>';
+  const r=48, C=2*Math.PI*r; let acc=0;
+  const arcs=parts.map(x=>{ const len=x.v/tot*C; const el=`<circle cx="70" cy="70" r="${r}" fill="none" stroke="${PMR_COL[x.k]}" stroke-width="24" stroke-dasharray="${len.toFixed(2)} ${(C-len).toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 70 70)"><title>${PMR_LBL[x.k]}: ${x.v} يوم</title></circle>`; acc+=len; return el; }).join('');
+  return `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><svg width="140" height="140" viewBox="0 0 140 140" style="${PMR_SVG_STYLE}">${arcs}<text x="70" y="68" text-anchor="middle" font-size="22" font-weight="700" fill="#2c2c2a">${tot}</text><text x="70" y="86" text-anchor="middle" font-size="10" fill="#888">يوم توقف</text></svg><div style="flex:1;min-width:180px">${parts.map(x=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid #f1f1ec"><span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${PMR_COL[x.k]};margin-left:6px;${PMR_CHART_STYLE}"></span>${PMR_LBL[x.k]}</span><span><strong>${x.v}</strong> يوم (${Math.round(x.v/tot*100)}%)</span></div>`).join('')}</div></div>`;
+}
+// أعمدة متراكمة: أيام التوقف لكل شهر حسب السبب
+function pmrStackedMonthly(monthly){ // monthly[0..11] = {cause:count}
+  const W=560,H=190,pl=10,pr=10,pt=18,pb=34, bw=(W-pl-pr)/12, max=Math.max(1,...monthly.map(m=>PMR_STOP_KEYS.reduce((t,k)=>t+(m[k]||0),0)));
+  let g='';
+  monthly.forEach((m,i)=>{ const x=W-pr-(i+1)*bw+bw*0.15, w=bw*0.7; let y=H-pb; const tot=PMR_STOP_KEYS.reduce((t,k)=>t+(m[k]||0),0);
+    PMR_STOP_KEYS.forEach(k=>{ const v=m[k]||0; if(!v) return; const h=v/max*(H-pb-pt); y-=h; g+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${PMR_COL[k]}"><title>${PMR_MON[i]} — ${PMR_LBL[k]}: ${v} يوم</title></rect>`; });
+    if(tot) g+=`<text x="${(x+w/2).toFixed(1)}" y="${(y-3).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#2c2c2a">${tot}</text>`;
+    g+=`<text x="${(x+w/2).toFixed(1)}" y="${H-pb+13}" text-anchor="middle" font-size="9" fill="#555">${PMR_MON[i].slice(0,5)}</text>`; });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:640px;height:auto;${PMR_SVG_STYLE}"><line x1="${pl}" y1="${H-pb}" x2="${W-pr}" y2="${H-pb}" stroke="#cbd5e1"/>${g}</svg>`;
+}
+// خريطة السنة: كل يوم لونه حسب حالته
+function pmrHeatmap(year,dayState){ // dayState[date] = {k,tip}
+  const cell=16,gap=2,pr=64,pt=16,W=6+31*(cell+gap)+pr,H=pt+12*(cell+gap)+4; let g='';
+  for(let d=1;d<=31;d++) g+=`<text x="${W-pr-(d-1)*(cell+gap)-cell/2}" y="11" text-anchor="middle" font-size="8" fill="#888">${d}</text>`;
+  for(let m=0;m<12;m++){ const y=pt+m*(cell+gap); g+=`<text x="${W-4}" y="${y+12}" text-anchor="end" font-size="10" fill="#555">${PMR_MON[m]}</text>`;
+    const dim=new Date(Date.UTC(+year,m+1,0)).getUTCDate();
+    for(let d=1;d<=dim;d++){ const ds=year+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0'), st=dayState[ds]||{k:'none',tip:''}; const x=W-pr-d*(cell+gap)+gap;
+      g+=`<rect x="${x}" y="${y}" width="${cell}" height="${cell}" rx="2" fill="${PMR_COL[st.k]}" stroke="#d1d5db" stroke-width="0.6"><title>${ds} — ${PMR_LBL[st.k]}${st.tip?': '+pmrEsc(st.tip):''}</title></rect>`; } }
+  return `<div style="overflow:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:560px;max-width:780px;height:auto;${PMR_SVG_STYLE}">${g}</svg></div>`;
+}
+// أعمدة أفقية (HTML): ساعات التوقف حسب السبب
+function pmrHBars(items,unit,color){ // items=[{l,v,n,c}]
+  const max=Math.max(1,...items.map(x=>x.v)); if(!items.length) return '<div style="font-size:12px;color:#888">لا توجد بيانات</div>';
+  return items.map(x=>`<div style="display:flex;align-items:center;gap:8px;font-size:11px;margin:3px 0"><div style="width:150px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${pmrEsc(x.l)}">${pmrEsc(x.l)}</div><div style="flex:1;background:#f3f4f6;border-radius:3px;height:14px;${PMR_CHART_STYLE}"><div style="width:${Math.max(2,x.v/max*100).toFixed(1)}%;height:14px;border-radius:3px;background:${x.c||color||'#f59e0b'};${PMR_CHART_STYLE}"></div></div><div style="width:120px;flex:none;text-align:left"><strong>${fmt(Math.round(x.v*10)/10)}</strong> ${unit}${x.n!=null?' <span style="color:#888">('+x.n+' مرة)</span>':''}</div></div>`).join('');
+}
+// أعمدة شهرية بسيطة (SVG)
+function pmrBars(vals,color,fmtFn){
+  const W=560,H=130,pl=10,pr=10,pt=16,pb=24,bw=(W-pl-pr)/12,max=Math.max(1,...vals); let g='';
+  vals.forEach((v,i)=>{ const x=W-pr-(i+1)*bw+bw*0.2,w=bw*0.6,h=v/max*(H-pb-pt),y=H-pb-h; if(v>0) g+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}"><title>${PMR_MON[i]}: ${fmtFn(v)}</title></rect><text x="${(x+w/2).toFixed(1)}" y="${(y-3).toFixed(1)}" text-anchor="middle" font-size="9" fill="#2c2c2a">${fmtFn(v)}</text>`;
+    g+=`<text x="${(x+w/2).toFixed(1)}" y="${H-pb+12}" text-anchor="middle" font-size="9" fill="#555">${PMR_MON[i].slice(0,5)}</text>`; });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:640px;height:auto;${PMR_SVG_STYLE}"><line x1="${pl}" y1="${H-pb}" x2="${W-pr}" y2="${H-pb}" stroke="#cbd5e1"/>${g}</svg>`;
+}
+// إنتاج فعلي مقابل المستهدف شهريًا
+function pmrActualTarget(act,tgt){
+  const W=560,H=150,pl=10,pr=10,pt=16,pb=24,bw=(W-pl-pr)/12,max=Math.max(1,...act,...tgt); let g='';
+  for(let i=0;i<12;i++){ const x0=W-pr-(i+1)*bw, w=bw*0.36; const ha=act[i]/max*(H-pb-pt), ht=tgt[i]/max*(H-pb-pt);
+    if(tgt[i]>0) g+=`<rect x="${(x0+bw*0.5).toFixed(1)}" y="${(H-pb-ht).toFixed(1)}" width="${w.toFixed(1)}" height="${ht.toFixed(1)}" fill="#cbd5e1"><title>${PMR_MON[i]} — المستهدف: ${fmt(tgt[i])}</title></rect>`;
+    if(act[i]>0){ g+=`<rect x="${(x0+bw*0.1).toFixed(1)}" y="${(H-pb-ha).toFixed(1)}" width="${w.toFixed(1)}" height="${ha.toFixed(1)}" fill="#22c55e"><title>${PMR_MON[i]} — الفعلي: ${fmt(act[i])}</title></rect>`; if(tgt[i]>0) g+=`<text x="${(x0+bw*0.5).toFixed(1)}" y="${(H-pb-Math.max(ha,ht)-3).toFixed(1)}" text-anchor="middle" font-size="9" fill="#2c2c2a">${Math.round(act[i]/tgt[i]*100)}%</text>`; }
+    g+=`<text x="${(x0+bw/2).toFixed(1)}" y="${H-pb+12}" text-anchor="middle" font-size="9" fill="#555">${PMR_MON[i].slice(0,5)}</text>`; }
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:640px;height:auto;${PMR_SVG_STYLE}"><line x1="${pl}" y1="${H-pb}" x2="${W-pr}" y2="${H-pb}" stroke="#cbd5e1"/>${g}</svg><div style="font-size:11px;margin-top:2px"><span style="display:inline-block;width:10px;height:10px;background:#22c55e;margin-left:4px"></span>الفعلي <span style="display:inline-block;width:10px;height:10px;background:#cbd5e1;margin:0 10px 0 4px"></span>المستهدف (النسبة فوق العمود = تحقيق الهدف)</div>`;
+}
+function pmrYearRange(year){ const to0=eqLastProdDate(); const end=year+'-12-31'; return {from:year+'-01-01',to:to0<end?(to0>=year+'-01-01'?to0:year+'-01-01'):end}; }
+// قسم التحليل الكامل لماكينة حقن
+function pmrStopSection(eq,year){
+  const rg=pmrYearRange(year), r=eqStopDaysCalc(eq,rg.from,rg.to);
+  if(!r.hasData) return '';
+  // حالة كل يوم
+  const st={}; r.prodList.forEach(d=>{ st[d]={k:'prod',tip:''}; }); r.offList.forEach(d=>{ st[d]={k:'off',tip:''}; }); r.days.forEach(x=>{ st[x.d]={k:x.cause,tip:x.reason}; });
+  const monthly=Array.from({length:12},()=>({})); r.days.forEach(x=>{ const m=+x.d.slice(5,7)-1; monthly[m][x.cause]=(monthly[m][x.cause]||0)+1; });
+  // ساعات التوقف المسجلة حسب السبب (كل الأسباب + بدون سبب)
+  const names=[eq.model,eq.name].filter(Boolean), hrs={}; production.filter(p=>names.indexOf(p.machine)>=0&&(p.date||'').startsWith(year)&&(p.downtime||0)>0).forEach(p=>{ const k=(p.stopReason||'').trim()||'بدون سبب مسجل'; (hrs[k]=hrs[k]||{v:0,n:0}); hrs[k].v+=p.downtime||0; hrs[k].n++; });
+  const hItems=Object.entries(hrs).sort((a,b)=>b[1].v-a[1].v).map(([l,o])=>({l,v:o.v,n:o.n,c:l==='بدون سبب مسجل'?'#ef4444':'#f59e0b'}));
+  const woH=workOrders.filter(w=>w.equipId==eq.id&&(w.date||'').startsWith(year)&&(w.hours||0)>0).reduce((t,w)=>t+w.hours,0);
+  if(woH>0) hItems.push({l:'صيانة (أوامر الشغل)',v:woH,n:workOrders.filter(w=>w.equipId==eq.id&&(w.date||'').startsWith(year)&&(w.hours||0)>0).length,c:'#3b82f6'});
+  hItems.sort((a,b)=>b.v-a.v);
+  const kp=(l,v,c)=>`<div style="flex:1;min-width:110px;border:1px solid #d3d1c7;border-radius:6px;padding:8px 10px"><div style="font-size:10px;color:#888">${l}</div><div style="font-size:17px;font-weight:700;${c?'color:'+c:''}">${v}</div></div>`;
+  const cnt=Object.assign({prod:r.prodDays,off:r.off},r.byCause);
+  const rangesHtml=r.ranges.length?`<table style="width:100%"><thead><tr><th>من</th><th>إلى</th><th>الأيام</th><th>السبب</th><th>التفاصيل</th></tr></thead><tbody>${r.ranges.map(x=>`<tr><td>${x.from}</td><td>${x.to}</td><td><strong>${x.n}</strong></td><td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${PMR_COL[x.cause]};margin-left:5px;${PMR_CHART_STYLE}"></span>${PMR_LBL[x.cause]}</td><td style="font-size:11px">${x.cause==='nopro'?'<span style="color:#b91c1c">— لم يُسجل سبب —</span>':pmrEsc(x.reason)}</td></tr>`).join('')}</tbody></table>`:'<p style="font-size:12px;color:#16a34a">لا توجد فترات توقف 🎉</p>';
+  return `<div style="margin-top:16px"><div style="font-size:13px;font-weight:700;color:var(--c-primary);margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--c-border)">🛑 تحليل التوقف الكامل (كل الأسباب حتى غير المفسّرة) — ${year}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${kp('أيام التشغيل',r.prodDays)}${kp('أيام التوقف',r.days.length,r.days.length?'#dc2626':'#16a34a')}${kp('الإتاحة',r.avail==null?'—':Math.round(r.avail*100)+'%')}${kp('بدون سبب (أيام)',r.byCause.nopro,r.byCause.nopro?'#dc2626':'#16a34a')}${kp('ساعات توقف مسجلة',fmt(Math.round(Object.values(hrs).reduce((t,o)=>t+o.v,0))))}</div>
+  ${pmrBox('أيام التوقف حسب السبب',pmrDonut(r.byCause),'الفترة: '+rg.from+' إلى '+rg.to+' — الإجازة الأسبوعية والعطلات غير محسوبة توقف')}
+  ${pmrBox('أيام التوقف شهريًا (موزعة حسب السبب)',pmrStackedMonthly(monthly)+pmrLegend(PMR_STOP_KEYS,null))}
+  ${pmrBox('خريطة السنة — كل يوم وحالته',pmrHeatmap(year,st)+pmrLegend(['prod','off','maint','prodstop','status','manual','nopro','none'],cnt))}
+  ${pmrBox('ساعات التوقف حسب السبب (كل الأسباب + بدون سبب مسجل)',pmrHBars(hItems,'س'),'المصدر: سجلات الإنتاج (ساعات التوقف في كل وردية) + أوامر الشغل. «بدون سبب مسجل» = ورديات فيها ساعات توقف ومفيش سبب مكتوب.')}
+  <div style="font-size:12px;font-weight:700;margin:10px 0 4px">كل فترات التوقف (${r.ranges.length} فترة)</div>${rangesHtml}</div>`;
+}
+// رسومات الصيانة والإنتاج لأي معدة
+function pmrMaintCharts(eq,year,woEval,prodEval){
+  const hrs=Array(12).fill(0), cost=Array(12).fill(0), cnt=Array(12).fill(0);
+  (woEval.wos||[]).forEach(w=>{ const m=+String(w.date||'').slice(5,7)-1; if(m>=0&&m<12){ hrs[m]+=w.hours||0; cost[m]+=w.totalCost||0; cnt[m]++; } });
+  let h='';
+  if(woEval.count) h+=`<div style="display:flex;gap:10px;flex-wrap:wrap">${'<div style="flex:1;min-width:280px">'+pmrBox('ساعات توقف الصيانة شهريًا',pmrBars(hrs,'#3b82f6',v=>fmt(Math.round(v*10)/10)))+'</div>'}${'<div style="flex:1;min-width:280px">'+pmrBox('تكلفة الصيانة شهريًا (ج.م)',pmrBars(cost,'#ef4444',v=>fmt(Math.round(v))))+'</div>'}</div>`;
+  if(prodEval&&prodEval.hasData){ const act=Array(12).fill(0), tgt=Array(12).fill(0); Object.entries(prodEval.byMonth).forEach(([m,o])=>{ const i=+m-1; if(i>=0&&i<12){ act[i]=o.actual; tgt[i]=o.target; } }); h+=pmrBox('الإنتاج الفعلي مقابل المستهدف شهريًا',pmrActualTarget(act,tgt)); }
+  return h?`<div style="margin-top:16px"><div style="font-size:13px;font-weight:700;color:var(--c-primary);margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--c-border)">📊 رسومات الصيانة والإنتاج — ${year}</div>${h}</div>`:'';
+}
+// مقارنة ماكينات الحقن (أعلى الصفحة)
+function pmrMachinesCompare(list,year){
+  const rg=pmrYearRange(year), rows=list.filter(eqIsInj).map(e=>eqStopDaysCalc(e,rg.from,rg.to)).filter(r=>r.hasData);
+  if(!rows.length) return '';
+  const max=Math.max(1,...rows.map(r=>r.prodDays+r.days.length));
+  const bars=rows.map(r=>{ const seg=(k,v)=>v>0?`<div title="${PMR_LBL[k]}: ${v}" style="width:${(v/max*100).toFixed(2)}%;background:${PMR_COL[k]};height:20px;${PMR_CHART_STYLE}"></div>`:''; return `<div style="display:flex;align-items:center;gap:8px;margin:6px 0"><div style="width:150px;flex:none;font-size:12px;font-weight:600">${pmrEsc(r.e.name)}</div><div style="flex:1;display:flex;border:1px solid #e5e7eb;border-radius:4px;overflow:hidden">${seg('prod',r.prodDays)}${PMR_STOP_KEYS.map(k=>seg(k,r.byCause[k])).join('')}</div><div style="width:120px;flex:none;font-size:11px">توقف <strong style="color:#dc2626">${r.days.length}</strong> يوم · إتاحة <strong>${r.avail==null?'—':Math.round(r.avail*100)+'%'}</strong></div></div>`; }).join('');
+  return `<div class="card" style="margin-bottom:20px"><div class="card-header"><h3>🛑 مقارنة ماكينات الحقن — أيام التشغيل والتوقف (${year})</h3></div><div class="card-body">${bars}${pmrLegend(['prod','maint','prodstop','status','manual','nopro'],null)}<div style="font-size:10px;color:#888;margin-top:4px">الفترة: ${rg.from} إلى ${rg.to}</div></div></div>`;
 }
 
 // ================= v24 — تركيب الصفحات والتهيئة =================
